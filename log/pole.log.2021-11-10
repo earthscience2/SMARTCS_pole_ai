@@ -1,7 +1,0 @@
-2021-11-10 15:42:43,158 INFO - mysql) host=112.166.16.97 db_name=polediagdb
-2021-11-10 15:46:34,943 INFO - sql_str=select devicetype, count(*) as cnt from tb_diag_pole_meas_result tdpmr  where poleid=%s group by devicetype; data=['0024Q471']
-2021-11-10 15:46:34,958 INFO - sql_str=SELECT * FROM tb_diag_pole_meas_result WHERE poleid=%s and devicetype=%s order by idx; data=['0024Q471', 'OUT']
-2021-11-10 15:46:34,974 INFO - sql_str=SELECT * FROM tb_diag_pole_meas_result WHERE poleid=%s and devicetype=%s order by idx; data=['0024Q471', 'IN']
-2021-11-10 15:46:34,991 INFO - sql_str=SELECT * FROM tb_diag_pole_meas_data WHERE poleid=%s and measno=%s and devicetype=%s and axis=%s order by idx; data=['0024Q471', 5, 'OUT', 'x']
-2021-11-10 15:46:35,009 INFO - sql_str=SELECT * FROM tb_diag_pole_meas_data WHERE poleid=%s and measno=%s and devicetype=%s and axis=%s order by idx; data=['0024Q471', 5, 'OUT', 'y']
-2021-11-10 15:46:35,025 INFO - sql_str=SELECT * FROM tb_diag_pole_meas_data WHERE poleid=%s and measno=%s and devicetype=%s and axis=%s order by idx; data=['0024Q471', 5, 'OUT', 'z']

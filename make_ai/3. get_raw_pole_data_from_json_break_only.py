@@ -144,30 +144,81 @@ def get_pole_anal2_result_break(server, project_name, poleid):
         traceback.print_exc()
         return None
 
-def check_pole_data_exists(output_base_dir, project_name, poleid):
+def scan_existing_poles(output_base_dir):
     """
-    파단 전주 데이터가 이미 저장되어 있는지 확인
+    출력 디렉토리에서 이미 존재하는 전주 데이터를 스캔하여 세트로 반환
+    (성능 최적화: 시작 시 한 번만 스캔하고 메모리에 캐싱)
     
     Args:
         output_base_dir: 출력 기본 디렉토리
+    
+    Returns:
+        set: (project_name, poleid) 튜플의 세트
+    """
+    existing_poles = set()
+    
+    if not os.path.exists(output_base_dir):
+        return existing_poles
+    
+    print(f"  기존 데이터 스캔 중: {output_base_dir}")
+    
+    # 먼저 프로젝트 목록과 각 프로젝트의 전주 목록 수집 (진행도 표시를 위해)
+    projects_poles = []
+    try:
+        for project_name in os.listdir(output_base_dir):
+            project_dir = os.path.join(output_base_dir, project_name)
+            if os.path.isdir(project_dir):
+                pole_list = []
+                for poleid in os.listdir(project_dir):
+                    pole_dir = os.path.join(project_dir, poleid)
+                    if os.path.isdir(pole_dir):
+                        pole_list.append((project_name, poleid, pole_dir))
+                if pole_list:
+                    projects_poles.append((project_name, pole_list))
+    except (OSError, PermissionError) as e:
+        print(f"  경고: 기존 데이터 스캔 중 오류 발생: {e}")
+        return existing_poles
+    
+    # 전체 전주 수 계산
+    total_poles = sum(len(poles) for _, poles in projects_poles)
+    
+    if total_poles == 0:
+        print(f"  기존 데이터 스캔 완료: 0개 전주 발견")
+        return existing_poles
+    
+    # 진행도 표시와 함께 스캔
+    with tqdm(total=total_poles, desc="  기존 데이터 스캔", unit="전주") as pbar:
+        for project_name, pole_list in projects_poles:
+            for proj_name, poleid, pole_dir in pole_list:
+                # 폴더 내에 CSV 파일이 있는지 확인
+                try:
+                    csv_files = [f for f in os.listdir(pole_dir) if f.endswith('.csv')]
+                    if len(csv_files) > 0:
+                        existing_poles.add((proj_name, poleid))
+                except (OSError, PermissionError):
+                    # 읽기 권한이 없거나 접근할 수 없는 경우 스킵
+                    pass
+                pbar.update(1)
+                pbar.set_postfix(발견=f"{len(existing_poles)}개")
+    
+    print(f"  기존 데이터 스캔 완료: {len(existing_poles)}개 전주 발견 (전체 {total_poles}개 중)")
+    return existing_poles
+
+def check_pole_data_exists(existing_poles_set, project_name, poleid):
+    """
+    파단 전주 데이터가 이미 저장되어 있는지 확인 (메모리 캐시 사용)
+    
+    Args:
+        existing_poles_set: scan_existing_poles()로 미리 스캔한 세트
         project_name: 프로젝트 이름
         poleid: 전주 ID
     
     Returns:
         bool: 데이터가 이미 존재하면 True
     """
-    pole_dir = os.path.join(output_base_dir, project_name, poleid)
-    
-    # 폴더가 존재하고 파일이 있는지 확인
-    if os.path.exists(pole_dir) and os.path.isdir(pole_dir):
-        # 폴더 내에 CSV 파일이 있는지 확인
-        csv_files = [f for f in os.listdir(pole_dir) if f.endswith('.csv')]
-        if len(csv_files) > 0:
-            return True
-    
-    return False
+    return (project_name, poleid) in existing_poles_set
 
-def save_break_pole_raw_data(server, project_name, poleid, anal_result, output_base_dir):
+def save_break_pole_raw_data(server, project_name, poleid, anal_result, output_base_dir, existing_poles_set):
     """
     파단 전주의 원본 데이터를 조회하여 저장
     
@@ -177,13 +228,14 @@ def save_break_pole_raw_data(server, project_name, poleid, anal_result, output_b
         poleid: 전주 ID
         anal_result: 분석 결과 정보
         output_base_dir: 출력 기본 디렉토리
+        existing_poles_set: 미리 스캔한 기존 전주 세트 (성능 최적화)
     
     Returns:
         bool or None: 저장 성공(True), 저장 실패(False), 이미 존재(None)
     """
     try:
-        # 이미 데이터가 존재하는지 확인
-        data_exists = check_pole_data_exists(output_base_dir, project_name, poleid)
+        # 이미 데이터가 존재하는지 확인 (메모리 캐시 사용)
+        data_exists = check_pole_data_exists(existing_poles_set, project_name, poleid)
         
         # 이미 데이터가 존재하면 건너뛰기
         if data_exists:
@@ -313,8 +365,9 @@ def save_break_pole_raw_data(server, project_name, poleid, anal_result, output_b
             }, f, ensure_ascii=False, indent=2)
         print(f"    [{poleid}] break_info.json {'업데이트' if info_exists else '저장'} 완료")
         
-        # 저장 성공
+        # 저장 성공 - 캐시에 추가
         csv_count = len([f for f in os.listdir(pole_dir) if f.endswith('.csv')])
+        existing_poles_set.add((project_name, poleid))  # 캐시 업데이트
         print(f"    [{poleid}] 추가됨: CSV 파일 {csv_count}개 저장 완료 (breakheight={breakheight}, breakdegree={breakdegree})")
         return True
         
@@ -337,6 +390,12 @@ def process_break_poles_from_json(json_file_path):
     # 출력 디렉토리 생성 (파단 전주만 저장)
     output_base_dir = os.path.join(current_dir, "3. raw_pole_data", "break")
     os.makedirs(output_base_dir, exist_ok=True)
+    
+    # 기존 데이터 스캔 (성능 최적화: 시작 시 한 번만 스캔)
+    print(f"\n{'='*60}")
+    print("기존 데이터 스캔 중...")
+    print(f"{'='*60}")
+    existing_poles_set = scan_existing_poles(output_base_dir)
     
     # 통계 정보
     stats = {
@@ -386,7 +445,7 @@ def process_break_poles_from_json(json_file_path):
                             continue
                         
                         # 파단 전주 원본 데이터 저장
-                        result = save_break_pole_raw_data(server, project_name, poleid, anal_result, output_base_dir)
+                        result = save_break_pole_raw_data(server, project_name, poleid, anal_result, output_base_dir, existing_poles_set)
                         
                         if result is None:
                             # 이미 존재하는 경우
