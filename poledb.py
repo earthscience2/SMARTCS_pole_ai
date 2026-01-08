@@ -6,10 +6,30 @@ import logger
 logger = logger.get_logger()
 poledb_conn = None
 
-def poledb_init():
+def poledb_init(server=None):
+    """
+    데이터베이스 연결 초기화
+    
+    Args:
+        server: 서버 이름 ('main', 'is', 'kh', 'jt'). None이면 기본 설정 사용
+    """
     global poledb_conn
-
-    poledb_conn = mysqldb.Mysqlhandler(poleconf.poledb_host, poleconf.poledb_user, poleconf.poledb_pwd, poleconf.poledb_dbname)
+    
+    # 서버별 호스트 설정
+    server_hosts = {
+        'main': '210.105.85.3',
+        'is': 'smartpole-is.iptime.org:33306',
+        'kh': 'smartpole-kh.iptime.org:33306',
+        'jt': 'smartpole-jt.iptime.org:33306'
+    }
+    
+    # 서버가 지정된 경우 해당 호스트 사용, 아니면 기본 설정 사용
+    if server and server in server_hosts:
+        host = server_hosts[server]
+    else:
+        host = poleconf.poledb_host
+    
+    poledb_conn = mysqldb.Mysqlhandler(host, poleconf.poledb_user, poleconf.poledb_pwd, poleconf.poledb_dbname)
     poledb_conn.connect()
 
 def ping():
@@ -196,6 +216,61 @@ def get_pole_list_all():
     print(result)
 
     return result
+
+def groupname_info():
+    """
+    모든 프로젝트(groupname) 목록을 조회
+    
+    Returns:
+        list: 프로젝트 이름 목록
+    """
+    sql_str = 'SELECT DISTINCT groupname FROM tb_anal_state WHERE groupname IS NOT NULL ORDER BY groupname'
+    
+    logger.info('sql_str={}'.format(sql_str))
+    
+    result = None
+    try:
+        result = poledb_conn.do_select_pd(sql_str)
+        if result is not None and not result.empty:
+            return result['groupname'].tolist()
+        return []
+    except Exception as e:
+        logger.error(str(e))
+        return []
+
+def group_anal_type_pole_2(groupname, anal_type):
+    """
+    2차 분석 결과를 타입별로 조회
+    
+    Args:
+        groupname: 프로젝트 이름
+        anal_type: 분석 타입 ('B': 파단, 'N': 정상)
+    
+    Returns:
+        list: 분석 결과 목록 (dict 형태)
+    """
+    data = [groupname, 2, anal_type]  # analstep=2 (2차 분석)
+    sql_str = """
+        SELECT tar.poleid, tar.breakstate, tar.breakheight, tar.breakdegree, tas.groupname
+        FROM tb_anal_result tar
+        JOIN tb_anal_state tas ON tar.poleid = tas.poleid
+        WHERE tas.groupname = %s
+        AND tar.analstep = %s
+        AND tar.breakstate = %s
+        ORDER BY tar.poleid
+    """
+    
+    logger.info('sql_str={} data={}'.format(sql_str, data))
+    
+    result = None
+    try:
+        result = poledb_conn.do_select_pd(sql_str, data)
+        if result is not None and not result.empty:
+            return result.to_dict('records')
+        return []
+    except Exception as e:
+        logger.error(str(e))
+        return []
 
 #get_pole_list_all())
 

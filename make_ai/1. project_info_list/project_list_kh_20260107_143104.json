@@ -1,0 +1,207 @@
+{
+  "server": "kh",
+  "server_name": "건화서버",
+  "timestamp": "20260107_143104",
+  "total_count": 16,
+  "summary": {
+    "total_poles": 1013,
+    "total_anal2_completed": 964,
+    "overall_anal2_ratio": 95.16
+  },
+  "projects": [
+    {
+      "project_name": "경남마산-202407",
+      "statistics": {
+        "total_poles": 0,
+        "not_measured": 0,
+        "not_analyzed": 0,
+        "anal1_completed": 0,
+        "anal2_completed": 0,
+        "anal2_ratio": 0.0
+      }
+    },
+    {
+      "project_name": "경남밀양-202407",
+      "statistics": {
+        "total_poles": 0,
+        "not_measured": 0,
+        "not_analyzed": 0,
+        "anal1_completed": 0,
+        "anal2_completed": 0,
+        "anal2_ratio": 0.0
+      }
+    },
+    {
+      "project_name": "경남사천-202407",
+      "statistics": {
+        "total_poles": 0,
+        "not_measured": 0,
+        "not_analyzed": 0,
+        "anal1_completed": 0,
+        "anal2_completed": 0,
+        "anal2_ratio": 0.0
+      }
+    },
+    {
+      "project_name": "경남직할-202407",
+      "statistics": {
+        "total_poles": 0,
+        "not_measured": 0,
+        "not_analyzed": 0,
+        "anal1_completed": 0,
+        "anal2_completed": 0,
+        "anal2_ratio": 0.0
+      }
+    },
+    {
+      "project_name": "경남진주-202407",
+      "statistics": {
+        "total_poles": 0,
+        "not_measured": 0,
+        "not_analyzed": 0,
+        "anal1_completed": 0,
+        "anal2_completed": 0,
+        "anal2_ratio": 0.0
+      }
+    },
+    {
+      "project_name": "경남진해-202407",
+      "statistics": {
+        "total_poles": 0,
+        "not_measured": 0,
+        "not_analyzed": 0,
+        "anal1_completed": 0,
+        "anal2_completed": 0,
+        "anal2_ratio": 0.0
+      }
+    },
+    {
+      "project_name": "경남창녕-202407",
+      "statistics": {
+        "total_poles": 0,
+        "not_measured": 0,
+        "not_analyzed": 0,
+        "anal1_completed": 0,
+        "anal2_completed": 0,
+        "anal2_ratio": 0.0
+      }
+    },
+    {
+      "project_name": "경남하동-202408",
+      "statistics": {
+        "total_poles": 0,
+        "not_measured": 0,
+        "not_analyzed": 0,
+        "anal1_completed": 0,
+        "anal2_completed": 0,
+        "anal2_ratio": 0.0
+      }
+    },
+    {
+      "project_name": "경남함안-202407",
+      "statistics": {
+        "total_poles": 0,
+        "not_measured": 0,
+        "not_analyzed": 0,
+        "anal1_completed": 0,
+        "anal2_completed": 0,
+        "anal2_ratio": 0.0
+      }
+    },
+    {
+      "project_name": "경남합천-202408",
+      "statistics": {
+        "total_poles": 0,
+        "not_measured": 0,
+        "not_analyzed": 0,
+        "anal1_completed": 0,
+        "anal2_completed": 0,
+        "anal2_ratio": 0.0
+      }
+    },
+    {
+      "project_name": "인천남인천-202407",
+      "statistics": {
+        "total_poles": 169,
+        "not_measured": 0,
+        "not_analyzed": 169,
+        "anal1_completed": 0,
+        "anal2_completed": 162,
+        "anal2_ratio": 95.86
+      }
+    },
+    {
+      "project_name": "인천부천-202407",
+      "statistics": {
+        "total_poles": 183,
+        "not_measured": 0,
+        "not_analyzed": 183,
+        "anal1_completed": 0,
+        "anal2_completed": 179,
+        "anal2_ratio": 97.81
+      }
+    },
+    {
+      "project_name": "인천시흥-202407",
+      "statistics": {
+        "total_poles": 205,
+        "not_measured": 0,
+        "not_analyzed": 205,
+        "anal1_completed": 0,
+        "anal2_completed": 198,
+        "anal2_ratio": 96.59
+      }
+    },
+    {
+      "project_name": "인천영종-202407",
+      "statistics": {
+        "total_poles": 70,
+        "not_measured": 0,
+        "not_analyzed": 70,
+        "anal1_completed": 0,
+        "anal2_completed": 55,
+        "anal2_ratio": 78.57
+      }
+    },
+    {
+      "project_name": "인천제물포-202407",
+      "statistics": {
+        "total_poles": 163,
+        "not_measured": 0,
+        "not_analyzed": 163,
+        "anal1_completed": 0,
+        "anal2_completed": 157,
+        "anal2_ratio": 96.32
+      }
+    },
+    {
+      "project_name": "인천직할-202407",
+      "statistics": {
+        "total_poles": 223,
+        "not_measured": 0,
+        "not_analyzed": 223,
+        "anal1_completed": 0,
+        "anal2_completed": 213,
+        "anal2_ratio": 95.52
+      }
+    }
+  ],
+  "project_names": [
+    "경남마산-202407",
+    "경남밀양-202407",
+    "경남사천-202407",
+    "경남직할-202407",
+    "경남진주-202407",
+    "경남진해-202407",
+    "경남창녕-202407",
+    "경남하동-202408",
+    "경남함안-202407",
+    "경남합천-202408",
+    "인천남인천-202407",
+    "인천부천-202407",
+    "인천시흥-202407",
+    "인천영종-202407",
+    "인천제물포-202407",
+    "인천직할-202407"
+  ]
+}

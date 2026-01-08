@@ -1,0 +1,641 @@
+{
+  "total_features": 75,
+  "feature_names": [
+    "x_value_mean",
+    "x_value_std",
+    "x_value_max",
+    "x_value_min",
+    "x_value_range",
+    "x_value_median",
+    "x_value_q1",
+    "x_value_q3",
+    "x_value_iqr",
+    "x_value_skewness",
+    "x_value_kurtosis",
+    "x_value_cv",
+    "y_value_mean",
+    "y_value_std",
+    "y_value_max",
+    "y_value_min",
+    "y_value_range",
+    "y_value_median",
+    "y_value_q1",
+    "y_value_q3",
+    "y_value_iqr",
+    "y_value_skewness",
+    "y_value_kurtosis",
+    "y_value_cv",
+    "z_value_mean",
+    "z_value_std",
+    "z_value_max",
+    "z_value_min",
+    "z_value_range",
+    "z_value_median",
+    "z_value_q1",
+    "z_value_q3",
+    "z_value_iqr",
+    "z_value_skewness",
+    "z_value_kurtosis",
+    "z_value_cv",
+    "height_range",
+    "height_mean",
+    "height_std",
+    "degree_range",
+    "degree_mean",
+    "degree_std",
+    "num_points",
+    "height_density",
+    "degree_density",
+    "x_value_height_grad_mean",
+    "x_value_height_grad_max",
+    "x_value_height_grad_std",
+    "x_value_degree_grad_mean",
+    "x_value_degree_grad_max",
+    "x_value_degree_grad_std",
+    "x_value_neighbor_diff_mean",
+    "x_value_neighbor_diff_max",
+    "y_value_height_grad_mean",
+    "y_value_height_grad_max",
+    "y_value_height_grad_std",
+    "y_value_degree_grad_mean",
+    "y_value_degree_grad_max",
+    "y_value_degree_grad_std",
+    "y_value_neighbor_diff_mean",
+    "y_value_neighbor_diff_max",
+    "z_value_height_grad_mean",
+    "z_value_height_grad_max",
+    "z_value_height_grad_std",
+    "z_value_degree_grad_mean",
+    "z_value_degree_grad_max",
+    "z_value_degree_grad_std",
+    "z_value_neighbor_diff_mean",
+    "z_value_neighbor_diff_max",
+    "x_value_y_value_corr",
+    "x_value_z_value_corr",
+    "y_value_z_value_corr",
+    "x_value_variability",
+    "y_value_variability",
+    "z_value_variability"
+  ],
+  "feature_types": {
+    "statistical": [
+      "x_value_mean",
+      "x_value_std",
+      "x_value_max",
+      "x_value_min",
+      "x_value_range",
+      "x_value_median",
+      "x_value_q1",
+      "x_value_q3",
+      "x_value_iqr",
+      "x_value_skewness",
+      "x_value_kurtosis",
+      "x_value_cv",
+      "y_value_mean",
+      "y_value_std",
+      "y_value_max",
+      "y_value_min",
+      "y_value_range",
+      "y_value_median",
+      "y_value_q1",
+      "y_value_q3",
+      "y_value_iqr",
+      "y_value_skewness",
+      "y_value_kurtosis",
+      "y_value_cv",
+      "z_value_mean",
+      "z_value_std",
+      "z_value_max",
+      "z_value_min",
+      "z_value_range",
+      "z_value_median",
+      "z_value_q1",
+      "z_value_q3",
+      "z_value_iqr",
+      "z_value_skewness",
+      "z_value_kurtosis",
+      "z_value_cv",
+      "x_value_height_grad_mean",
+      "x_value_height_grad_max",
+      "x_value_height_grad_std",
+      "x_value_degree_grad_mean",
+      "x_value_degree_grad_max",
+      "x_value_degree_grad_std",
+      "x_value_neighbor_diff_mean",
+      "x_value_neighbor_diff_max",
+      "y_value_height_grad_mean",
+      "y_value_height_grad_max",
+      "y_value_height_grad_std",
+      "y_value_degree_grad_mean",
+      "y_value_degree_grad_max",
+      "y_value_degree_grad_std",
+      "y_value_neighbor_diff_mean",
+      "y_value_neighbor_diff_max",
+      "z_value_height_grad_mean",
+      "z_value_height_grad_max",
+      "z_value_height_grad_std",
+      "z_value_degree_grad_mean",
+      "z_value_degree_grad_max",
+      "z_value_degree_grad_std",
+      "z_value_neighbor_diff_mean",
+      "z_value_neighbor_diff_max"
+    ],
+    "spatial": [
+      "height_range",
+      "height_mean",
+      "height_std",
+      "degree_range",
+      "degree_mean",
+      "degree_std",
+      "num_points",
+      "height_density",
+      "degree_density"
+    ],
+    "gradient": [
+      "x_value_height_grad_mean",
+      "x_value_height_grad_max",
+      "x_value_height_grad_std",
+      "x_value_degree_grad_mean",
+      "x_value_degree_grad_max",
+      "x_value_degree_grad_std",
+      "x_value_neighbor_diff_mean",
+      "x_value_neighbor_diff_max",
+      "y_value_height_grad_mean",
+      "y_value_height_grad_max",
+      "y_value_height_grad_std",
+      "y_value_degree_grad_mean",
+      "y_value_degree_grad_max",
+      "y_value_degree_grad_std",
+      "y_value_neighbor_diff_mean",
+      "y_value_neighbor_diff_max",
+      "z_value_height_grad_mean",
+      "z_value_height_grad_max",
+      "z_value_height_grad_std",
+      "z_value_degree_grad_mean",
+      "z_value_degree_grad_max",
+      "z_value_degree_grad_std",
+      "z_value_neighbor_diff_mean",
+      "z_value_neighbor_diff_max"
+    ],
+    "pattern": [
+      "x_value_y_value_corr",
+      "x_value_z_value_corr",
+      "y_value_z_value_corr",
+      "x_value_variability",
+      "y_value_variability",
+      "z_value_variability"
+    ]
+  },
+  "statistics": {
+    "x_value_mean": {
+      "mean": -32.07409667834989,
+      "std": 133.57097884677682,
+      "min": -1000.7076207243459,
+      "max": 486.9198648224322
+    },
+    "x_value_std": {
+      "mean": 19.88986624331596,
+      "std": 62.74757297172557,
+      "min": 0.0,
+      "max": 679.175447167256
+    },
+    "x_value_max": {
+      "mean": 9.862280260103066,
+      "std": 137.75314109919984,
+      "min": -1000.707620724346,
+      "max": 1412.7121422009495
+    },
+    "x_value_min": {
+      "mean": -72.32400144279252,
+      "std": 222.60448973739543,
+      "min": -1443.6509995002498,
+      "max": 443.7505438723713
+    },
+    "x_value_range": {
+      "mean": 82.1862817028956,
+      "std": 258.02296845838754,
+      "min": 0.0,
+      "max": 2527.3396678689505
+    },
+    "x_value_median": {
+      "mean": -32.48138140265161,
+      "std": 134.61544753895348,
+      "min": -1000.707620724346,
+      "max": 502.1891857724931
+    },
+    "x_value_q1": {
+      "mean": -45.45900634226777,
+      "std": 160.66050308021278,
+      "min": -1102.2367967102841,
+      "max": 455.3755438723713
+    },
+    "x_value_q3": {
+      "mean": -18.549144434014057,
+      "std": 122.16168267983761,
+      "min": -1000.707620724346,
+      "max": 567.7148432840543
+    },
+    "x_value_iqr": {
+      "mean": 26.90986190825372,
+      "std": 97.72369739638152,
+      "min": 0.0,
+      "max": 1553.9
+    },
+    "x_value_skewness": {
+      "mean": -0.002964364145962164,
+      "std": 0.7691985431710918,
+      "min": -3.5538805340555895,
+      "max": 4.035979441348492
+    },
+    "x_value_kurtosis": {
+      "mean": -0.05650825388514537,
+      "std": 1.7136565594482025,
+      "min": -2.0,
+      "max": 15.780010902441209
+    },
+    "x_value_cv": {
+      "mean": 1.3831092716523385,
+      "std": 3.6901268750919005,
+      "min": 0.0,
+      "max": 46.55889822584249
+    },
+    "y_value_mean": {
+      "mean": -234.21769059354793,
+      "std": 530.188463010195,
+      "min": -2336.6348153115473,
+      "max": -0.0219188911606404
+    },
+    "y_value_std": {
+      "mean": 23.17187901562931,
+      "std": 83.95913170624779,
+      "min": 0.0,
+      "max": 1007.8936689656381
+    },
+    "y_value_max": {
+      "mean": -182.86586760332543,
+      "std": 462.02303560032874,
+      "min": -2208.386635533246,
+      "max": 1722.0798517407968
+    },
+    "y_value_min": {
+      "mean": -278.03263270275266,
+      "std": 644.2513510359372,
+      "min": -4601.833333333334,
+      "max": -0.0287866835764109
+    },
+    "y_value_range": {
+      "mean": 95.1667650994272,
+      "std": 352.5810386773872,
+      "min": 0.0,
+      "max": 4550.233333333334
+    },
+    "y_value_median": {
+      "mean": -235.98291966678997,
+      "std": 533.6568492477006,
+      "min": -2254.522697036825,
+      "max": -0.0232993391733881
+    },
+    "y_value_q1": {
+      "mean": -245.91078243629573,
+      "std": 556.1772337716716,
+      "min": -2682.372697036825,
+      "max": -0.0287089592606606
+    },
+    "y_value_q3": {
+      "mean": -223.397615380492,
+      "std": 507.55685607059587,
+      "min": -2208.386635533246,
+      "max": 0.04197187345738222
+    },
+    "y_value_iqr": {
+      "mean": 22.513167055803674,
+      "std": 77.94501607940627,
+      "min": 0.0,
+      "max": 734.3634355275024
+    },
+    "y_value_skewness": {
+      "mean": 0.04178454819544168,
+      "std": 1.0952390343409755,
+      "min": -2.993614377522586,
+      "max": 5.179625442870482
+    },
+    "y_value_kurtosis": {
+      "mean": 0.53076787535793,
+      "std": 2.714985890621132,
+      "min": -2.0,
+      "max": 26.58559716112487
+    },
+    "y_value_cv": {
+      "mean": 0.11309016340896466,
+      "std": 0.1574906105224589,
+      "min": 0.0,
+      "max": 2.321279182490458
+    },
+    "z_value_mean": {
+      "mean": -13.875826262339654,
+      "std": 167.9303857355069,
+      "min": -1178.9582856144311,
+      "max": 918.8025277518533
+    },
+    "z_value_std": {
+      "mean": 33.02132539180869,
+      "std": 102.8641528022531,
+      "min": 0.0,
+      "max": 834.2593396099346
+    },
+    "z_value_max": {
+      "mean": 59.53269708256313,
+      "std": 292.64828922994803,
+      "min": -630.3533896822876,
+      "max": 2750.4829622929883
+    },
+    "z_value_min": {
+      "mean": -83.2007963752666,
+      "std": 293.8657802494002,
+      "min": -2456.8681715650864,
+      "max": 777.2196093226023
+    },
+    "z_value_range": {
+      "mean": 142.73349345782975,
+      "std": 456.29857393202815,
+      "min": 0.0,
+      "max": 3633.3999999999987
+    },
+    "z_value_median": {
+      "mean": -15.408717658390694,
+      "std": 164.03740830482312,
+      "min": -1239.6860633922092,
+      "max": 880.0219721962978
+    },
+    "z_value_q1": {
+      "mean": -33.06780122011331,
+      "std": 181.57216918575463,
+      "min": -1311.498563392209,
+      "max": 777.2196093226023
+    },
+    "z_value_q3": {
+      "mean": 3.7045575674343554,
+      "std": 171.4073063451892,
+      "min": -1163.811063392209,
+      "max": 1171.9457820082084
+    },
+    "z_value_iqr": {
+      "mean": 36.77235878754766,
+      "std": 111.11515267971343,
+      "min": 0.0,
+      "max": 817.7340579710145
+    },
+    "z_value_skewness": {
+      "mean": 0.016664916828132387,
+      "std": 0.8517489933561938,
+      "min": -5.464057614471057,
+      "max": 3.63006502341545
+    },
+    "z_value_kurtosis": {
+      "mean": 0.08876284427970743,
+      "std": 2.1066075812136953,
+      "min": -2.0,
+      "max": 30.495405477423667
+    },
+    "z_value_cv": {
+      "mean": 1.7774053159692997,
+      "std": 5.977635306863197,
+      "min": 0.0,
+      "max": 115.37322110250528
+    },
+    "height_range": {
+      "mean": 0.3546783625730994,
+      "std": 0.061639736852517155,
+      "min": 0.0,
+      "max": 0.40000000000000013
+    },
+    "height_mean": {
+      "mean": 0.6418128654970761,
+      "std": 0.3543789074205368,
+      "min": 0.0,
+      "max": 1.9
+    },
+    "height_std": {
+      "mean": 0.1278719967099813,
+      "std": 0.018968521386935583,
+      "min": 0.0,
+      "max": 0.14142135623730956
+    },
+    "degree_range": {
+      "mean": 33.36257309941521,
+      "std": 14.857354039832483,
+      "min": 0.0,
+      "max": 40.0
+    },
+    "degree_mean": {
+      "mean": 170.704840805718,
+      "std": 93.42390397995162,
+      "min": 20.0,
+      "max": 330.0
+    },
+    "degree_std": {
+      "mean": 37.00877134035207,
+      "std": 55.00986598852955,
+      "min": 11.4564392373896,
+      "max": 170.14699527173556
+    },
+    "num_points": {
+      "mean": 41.59356725146199,
+      "std": 5.68847331811726,
+      "min": 10.0,
+      "max": 50.0
+    },
+    "height_density": {
+      "mean": 43977.34492522749,
+      "std": 661288.0072355374,
+      "min": 99.99975000062497,
+      "max": 10000000.0
+    },
+    "degree_density": {
+      "mean": 0.8841258021288045,
+      "std": 0.35808324735906627,
+      "min": 0.027777777700617283,
+      "max": 1.1428571102040825
+    },
+    "x_value_height_grad_mean": {
+      "mean": 12.890245498001791,
+      "std": 40.40718993472263,
+      "min": 0.0,
+      "max": 371.41515151515165
+    },
+    "x_value_height_grad_max": {
+      "mean": 53.83320220710403,
+      "std": 171.2557750384105,
+      "min": 0.0,
+      "max": 1917.9000000000003
+    },
+    "x_value_height_grad_std": {
+      "mean": 18.46995598908679,
+      "std": 57.60003103526101,
+      "min": 0.0,
+      "max": 554.6844572568804
+    },
+    "x_value_degree_grad_mean": {
+      "mean": 17.4830262844644,
+      "std": 58.36220136520233,
+      "min": 0.0,
+      "max": 516.2701575348688
+    },
+    "x_value_degree_grad_max": {
+      "mean": 56.057808417817405,
+      "std": 183.39757131401305,
+      "min": 0.0,
+      "max": 1421.0444444444374
+    },
+    "x_value_degree_grad_std": {
+      "mean": 23.03043982308782,
+      "std": 76.62206075482275,
+      "min": 0.0,
+      "max": 640.5940889362362
+    },
+    "x_value_neighbor_diff_mean": {
+      "mean": 11.00510336430556,
+      "std": 35.10918057322159,
+      "min": 0.0,
+      "max": 355.528787878788
+    },
+    "x_value_neighbor_diff_max": {
+      "mean": 49.93443625272164,
+      "std": 161.77360400524586,
+      "min": 0.0,
+      "max": 1798.1666666666665
+    },
+    "y_value_height_grad_mean": {
+      "mean": 10.469192143004314,
+      "std": 36.142198885435974,
+      "min": 0.0,
+      "max": 513.1861114802205
+    },
+    "y_value_height_grad_max": {
+      "mean": 59.21671241931775,
+      "std": 218.69887159706443,
+      "min": 0.0,
+      "max": 2873.5555555555566
+    },
+    "y_value_height_grad_std": {
+      "mean": 16.977226059365474,
+      "std": 61.44219021662845,
+      "min": 0.0,
+      "max": 927.5866711004323
+    },
+    "y_value_degree_grad_mean": {
+      "mean": 24.109570053408593,
+      "std": 90.26062098500186,
+      "min": 0.0,
+      "max": 1059.4500000000005
+    },
+    "y_value_degree_grad_max": {
+      "mean": 83.6762941355767,
+      "std": 332.86817950182547,
+      "min": 0.0,
+      "max": 4347.000000000001
+    },
+    "y_value_degree_grad_std": {
+      "mean": 33.476550110774795,
+      "std": 127.25067675614476,
+      "min": 0.0,
+      "max": 1556.7822593210506
+    },
+    "y_value_neighbor_diff_mean": {
+      "mean": 8.571529021766121,
+      "std": 28.48454114921092,
+      "min": 0.0,
+      "max": 356.1118354140301
+    },
+    "y_value_neighbor_diff_max": {
+      "mean": 56.024608193409904,
+      "std": 225.01032309739105,
+      "min": 0.0,
+      "max": 3221.5685146129736
+    },
+    "z_value_height_grad_mean": {
+      "mean": 17.743394315429878,
+      "std": 53.07005189863235,
+      "min": 0.0,
+      "max": 553.9474509430412
+    },
+    "z_value_height_grad_max": {
+      "mean": 83.75000016789,
+      "std": 268.7105679991137,
+      "min": 0.0,
+      "max": 2299.9000000000074
+    },
+    "z_value_height_grad_std": {
+      "mean": 26.50981083347793,
+      "std": 80.6884973811613,
+      "min": 0.0,
+      "max": 812.7831725577303
+    },
+    "z_value_degree_grad_mean": {
+      "mean": 32.850958544377825,
+      "std": 113.75962011334677,
+      "min": 0.0,
+      "max": 940.4844560674214
+    },
+    "z_value_degree_grad_max": {
+      "mean": 116.54010649062157,
+      "std": 404.67442214661725,
+      "min": 0.0,
+      "max": 3468.583333333333
+    },
+    "z_value_degree_grad_std": {
+      "mean": 44.02095133921289,
+      "std": 152.86911447573732,
+      "min": 0.0,
+      "max": 1306.7534403593954
+    },
+    "z_value_neighbor_diff_mean": {
+      "mean": 14.469777619550149,
+      "std": 41.776402607222174,
+      "min": 0.0,
+      "max": 339.7861811017782
+    },
+    "z_value_neighbor_diff_max": {
+      "mean": 76.13187382741681,
+      "std": 243.1573846613042,
+      "min": 0.0,
+      "max": 2296.0666666666657
+    },
+    "x_value_y_value_corr": {
+      "mean": 0.0942663199562701,
+      "std": 0.43085984514509734,
+      "min": -1.0,
+      "max": 1.0
+    },
+    "x_value_z_value_corr": {
+      "mean": 0.06916445665660115,
+      "std": 0.4787525167534403,
+      "min": -1.0,
+      "max": 1.0
+    },
+    "y_value_z_value_corr": {
+      "mean": 0.11008591448243905,
+      "std": 0.48524308328105153,
+      "min": -1.0,
+      "max": 1.0
+    },
+    "x_value_variability": {
+      "mean": 1.3831092716523385,
+      "std": 3.6901268750919005,
+      "min": 0.0,
+      "max": 46.55889822584249
+    },
+    "y_value_variability": {
+      "mean": 0.11309016340896466,
+      "std": 0.1574906105224589,
+      "min": 0.0,
+      "max": 2.321279182490458
+    },
+    "z_value_variability": {
+      "mean": 1.7774053159692997,
+      "std": 5.977635306863197,
+      "min": 0.0,
+      "max": 115.37322110250528
+    }
+  }
+}

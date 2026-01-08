@@ -1,153 +1,89 @@
-absl-py==0.11.0
-aniso8601==9.0.1
-argon2-cffi==20.1.0
-astroid==2.4.2
-astunparse==1.6.3
-async-generator==1.10
-attrs==20.2.0
-backcall==0.2.0
-bleach==3.2.1
-bokeh==2.2.3
-Bottleneck==1.3.2
-cached-property==1.5.2
-cachetools==4.1.1
-certifi==2020.6.20
-cffi==1.14.3
-chardet==3.0.4
-click==7.1.2
-cycler==0.10.0
-decorator==4.4.2
-defusedxml==0.6.0
-Django==2.2.4
-entrypoints==0.3
-et-xmlfile==1.1.0
-flake8==3.8.4
-Flask==1.1.2
-flask-restx==1.0.5
-gast==0.3.3
-google-auth==1.23.0
-google-auth-oauthlib==0.4.2
-google-pasta==0.2.0
-graphviz==0.8.4
-grpcio==1.33.2
-h5py==3.0.0
-idna==2.10
-imageio==2.9.0
-importlib-metadata==2.0.0
-ipykernel==5.3.4
-ipython==7.19.0
-ipython-genutils==0.2.0
-ipywidgets==7.5.1
-isort==5.6.4
-itsdangerous==1.1.0
-jedi==0.17.2
-Jinja2==2.11.2
-joblib==0.17.0
-jsonschema==3.2.0
-jupyter==1.0.0
-jupyter-client==6.1.7
-jupyter-console==6.2.0
-jupyter-core==4.6.3
-jupyterlab-pygments==0.1.2
-Keras==2.4.3
-Keras-Preprocessing==1.1.2
-kiwisolver==1.3.1
-lazy-object-proxy==1.4.3
-llvmlite==0.34.0
-magpylib==3.0.2
-Markdown==3.3.3
-MarkupSafe==1.1.1
-matplotlib==3.3.2
-mccabe==0.6.1
-mistune==0.8.4
-mpmath==1.1.0
-mxnet==1.7.0.post1
-nbclient==0.5.1
-nbconvert==6.0.7
-nbformat==5.0.8
-nest-asyncio==1.4.2
-networkx==2.5
-notebook==6.1.4
-numba==0.51.2
-numpy==1.21.5
-oauthlib==3.1.0
-openpyxl==3.0.9
-opt-einsum==3.3.0
-packaging==20.4
-pandas==1.1.4
-pandocfilters==1.4.3
-parso==0.7.1
-patsy==0.5.1
-PeakUtils==1.3.3
-pexpect==4.8.0
-pickleshare==0.7.5
-pika==1.3.1
-Pillow==8.0.1
-pip==20.2.4
-prometheus-client==0.8.0
-prompt-toolkit==3.0.8
-protobuf==3.13.0
-ptyprocess==0.6.0
-py4j==0.10.9
-pyasn1==0.4.8
-pyasn1-modules==0.2.8
-pycodestyle==2.6.0
-pycparser==2.20
-pyflakes==2.2.0
-pygame==2.0.0
-Pygments==2.7.2
-pylint==2.6.0
-PyMySQL==1.0.2
-pyparsing==2.4.7
-PyQt5==5.15.1
-PyQt5-sip==12.8.1
-pyqtgraph==0.12.1
-pyrsistent==0.17.3
-pyspark==3.0.1
-python-dateutil==2.8.1
-pytz==2020.4
-PyWavelets==1.1.1
-PyYAML==5.3.1
-pyzmq==19.0.2
-qtconsole==4.7.7
-QtPy==1.9.0
-requests==2.24.0
-requests-oauthlib==1.3.0
-rsa==4.6
-scikit-image==0.17.2
-scikit-learn==0.23.2
-scipy==1.7.3
-seaborn==0.11.0
-Send2Trash==1.5.0
-setuptools==50.3.2
-six==1.15.0
-sqlparse==0.4.1
-statsmodels==0.12.1
-sympy==1.6.2
-tensorboard==2.3.0
-tensorboard-plugin-wit==1.7.0
-tensorflow==2.3.1
-tensorflow-estimator==2.3.0
-termcolor==1.1.0
-terminado==0.9.1
-testpath==0.4.4
-threadpoolctl==2.1.0
-tifffile==2020.10.1
-toml==0.10.2
-torch==1.3.1+cpu
-torchvision==0.4.2+cpu
-tornado==6.1
-tqdm==4.51.0
-traitlets==5.0.5
-typed-ast==1.4.1
-typing-extensions==3.7.4.3
-urllib3==1.25.11
-wcwidth==0.2.5
-webencodings==0.5.1
-Werkzeug==1.0.1
-wheel==0.35.1
-widgetsnbextension==3.5.1
-wrapt==1.12.1
-xlrd==2.0.1
-XlsxWriter==3.0.3
-zipp==3.4.0
+# 전주분석 프로젝트 - 전체 패키지 목록
+# 프로젝트에서 실제 사용되는 패키지들
+
+# ============================================
+# 핵심 필수 패키지
+# ============================================
+# 데이터 처리
+pandas>=1.1.4
+numpy>=1.21.5
+
+# 과학 계산
+scipy>=1.7.3
+
+# 데이터베이스
+PyMySQL>=1.0.2
+
+# Excel 파일 처리
+openpyxl>=3.0.9
+XlsxWriter>=3.0.3
+
+# ============================================
+# 분석 및 시뮬레이션
+# ============================================
+# 자기장 시뮬레이션
+magpylib>=3.0.2
+
+# 성능 최적화
+bottleneck>=1.3.2
+
+# 피크 검출
+PeakUtils>=1.3.3
+
+# ============================================
+# 시각화 (GUI 및 그래프)
+# ============================================
+# 그래프 그리기
+matplotlib>=3.3.2
+pyqtgraph>=0.12.1
+
+# GUI (선택사항 - GUI 기능 사용 시)
+PyQt5>=5.15.1
+PyQt5-sip>=12.8.1
+
+# 인터랙티브 시각화
+plotly>=4.0.0
+
+# ============================================
+# 웹 서버 (선택사항)
+# ============================================
+# Flask 웹 서버 (poleapp.py 사용 시)
+Flask>=1.1.2
+flask-restx>=1.0.5
+
+# ============================================
+# 유틸리티
+# ============================================
+# HTTP 요청 (Slack 알림)
+requests>=2.24.0
+
+# 시간대 처리
+pytz>=2020.4
+
+# 설정 파일 처리
+PyYAML>=5.3.1
+
+# 스케줄링 (Pole_project_schedule_exe.py 사용 시)
+schedule>=1.0.0
+
+# ============================================
+# 개발 도구 (선택사항)
+# ============================================
+# 코드 품질 검사
+flake8>=3.8.4
+pylint>=2.6.0
+
+# ============================================
+# 참고: 다음 패키지들은 현재 코드에서 사용되지 않지만
+# 기존 requirements.txt에 포함되어 있었습니다.
+# 필요시 주석을 해제하여 설치하세요.
+# ============================================
+# TensorFlow (AI 모델 사용 시)
+# tensorflow>=2.3.1
+
+# Jupyter (개발 환경)
+# jupyter>=1.0.0
+# ipython>=7.19.0
+
+# PySpark (대용량 데이터 처리 시)
+# pyspark>=3.0.1
