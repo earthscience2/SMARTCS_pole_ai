@@ -1,4 +1,0 @@
-,poleid,s_num,stype,CH,simu_rate,S_position,X_location,mac_x_v,mac_y_v,mac_z_v,corrcoef_x,corrcoef_y,corrcoef_z,total,X_point_X,X_point_Y,prediction
-0,0683D001,5,OUT,2,0.2,20,35,0.659,0.432,0.537,0.813,-0.657,0.733,3.83,333.0,0.52,NG
-1,0683D001,5,OUT,3,0.2,20,35,0.677,0.321,0.361,0.825,-0.566,0.601,3.35,346.0,0.52,NG
-2,0683D001,6,OUT,1,0.2,20,30,0.346,0.519,0.353,0.588,0.721,0.594,3.12,90.0,0.45,NG
