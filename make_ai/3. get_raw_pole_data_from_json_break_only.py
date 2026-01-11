@@ -20,14 +20,13 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-import poledb as PDB
+from config import poledb as PDB
 
-# 서버 정보
+# 서버 정보 (JT 서버는 데이터 수집 대상에서 제외)
 SERVERS = {
     "main": "메인서버",
     "is": "이수서버",
     "kh": "건화서버",
-    "jt": "제이티엔지니어링"
 }
 
 def find_latest_json_file():
@@ -410,6 +409,10 @@ def process_break_poles_from_json(json_file_path):
     servers_data = data.get('servers', {})
     
     for server, server_info in servers_data.items():
+        # JT 서버 데이터는 사용하지 않음
+        if server == "jt":
+            print(f"\n[JT 서버] 데이터 수집 대상에서 제외합니다.")
+            continue
         print(f"\n{'='*60}")
         print(f"[{SERVERS[server]}] 처리 시작 (파단 전주만)")
         print(f"{'='*60}")

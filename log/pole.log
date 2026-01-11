@@ -597,3 +597,33 @@
 2026-01-08 16:50:51,615 INFO - select now()
 2026-01-08 16:58:44,778 ERROR - Failed to connect to database: (2003, "Can't connect to MySQL server on '210.105.85.3' (timed out)")
 2026-01-08 16:58:44,780 INFO - select now()
+2026-01-09 18:06:09,732 ERROR - Failed to connect to database: (2003, "Can't connect to MySQL server on '210.105.85.3' (timed out)")
+2026-01-09 18:06:09,732 ERROR - 'NoneType' object has no attribute 'cursor'
+2026-01-09 18:06:09,948 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-09 18:06:41,701 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-01-09 18:06:51,850 ERROR - Failed to connect to database: (2003, "Can't connect to MySQL server on 'smartpole-jt.iptime.org' ([Errno 51] Network is unreachable)")
+2026-01-09 18:06:51,851 ERROR - 'NoneType' object has no attribute 'cursor'
+2026-01-09 18:08:38,783 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-09 18:08:38,930 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-09 18:09:08,231 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-01-09 18:09:09,998 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-01-09 18:17:23,145 ERROR - Failed to connect to database: (2003, "Can't connect to MySQL server on '210.105.85.3' (timed out)")
+2026-01-09 18:17:23,146 INFO - select now()
+2026-01-09 18:17:23,342 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-09 18:17:23,343 INFO - select now()
+2026-01-09 18:17:23,360 INFO - [DB] ping success
+2026-01-09 18:17:23,548 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-01-09 18:17:23,549 INFO - select now()
+2026-01-09 18:17:23,570 INFO - [DB] ping success
+2026-01-09 18:25:16,230 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-09 18:27:37,474 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-09 18:53:43,521 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-01-09 18:54:33,669 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-09 20:08:28,870 ERROR - Failed to connect to database: (2003, "Can't connect to MySQL server on '210.105.85.3' (timed out)")
+2026-01-09 20:13:55,242 WARNING - Matplotlib is building the font cache; this may take a moment.
+2026-01-09 20:14:02,893 INFO - Failed to extract font properties from /System/Library/Fonts/LastResort.otf: tuple indices must be integers or slices, not str
+2026-01-09 20:14:02,909 INFO - Failed to extract font properties from /System/Library/Fonts/Supplemental/NISC18030.ttf: In FT2Font: Could not set the fontsize (invalid pixel size; error code 0x17)
+2026-01-09 20:14:02,917 INFO - Failed to extract font properties from /System/Library/Fonts/Apple Color Emoji.ttc: In FT2Font: Could not set the fontsize (invalid pixel size; error code 0x17)
+2026-01-09 20:14:02,980 INFO - Failed to extract font properties from /System/Library/PrivateFrameworks/FontServices.framework/Resources/Reserved/PingFangUI.ttc: In FT2Font: Can not load face (locations (loca) table missing; error code 0x90)
+2026-01-09 20:14:03,072 INFO - Failed to extract font properties from /System/Library/Fonts/SFIndia.ttc: In FT2Font: Can not load face (SFNT font table missing; error code 0x8e)
+2026-01-09 20:14:03,091 INFO - generated new fontManager

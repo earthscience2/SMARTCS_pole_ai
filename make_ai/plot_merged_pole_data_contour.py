@@ -8,10 +8,16 @@ x, y, z 값을 각각 등고선으로 표시하고 하나의 화면에 배치
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib
+import logging
 import argparse
 import os
 import sys
 from pathlib import Path
+
+# Matplotlib 폰트 관련 경고 억제
+matplotlib_logger = logging.getLogger('matplotlib')
+matplotlib_logger.setLevel(logging.ERROR)
 
 # 현재 디렉토리 경로
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -49,10 +55,10 @@ def plot_contour_2d(csv_file, output_file=None, break_info=None):
             print(f"오류: 필수 컬럼 '{col}'이 없습니다.")
             return
     
-    # 데이터 정렬 (높이, 각도 순)
+    # 데이터 정렬 (높이, 각도 순) - 높이는 낮은 값부터 높은 값 순서로
     df = df.sort_values(['height', 'degree'])
     
-    # 높이와 각도의 고유값 추출
+    # 높이와 각도의 고유값 추출 (높이는 낮은 값부터 높은 값 순서로)
     heights = sorted(df['height'].unique())
     degrees = sorted(df['degree'].unique())
     
@@ -146,6 +152,7 @@ def plot_contour_2d(csv_file, output_file=None, break_info=None):
     ax1.set_xlabel('Degree (°)', fontsize=12)
     ax1.set_ylabel('Height (m)', fontsize=12)
     ax1.set_title('X Value', fontsize=14, fontweight='bold')
+    ax1.set_ylim(min(heights), max(heights))  # 높이 축 범위 명시적 설정
     ax1.grid(True, alpha=0.2, linestyle='--', linewidth=0.5)
     cbar1 = plt.colorbar(contour1, ax=ax1)
     cbar1.set_label('X Value', fontsize=11)
@@ -162,6 +169,7 @@ def plot_contour_2d(csv_file, output_file=None, break_info=None):
     ax2.set_xlabel('Degree (°)', fontsize=12)
     ax2.set_ylabel('Height (m)', fontsize=12)
     ax2.set_title('Y Value', fontsize=14, fontweight='bold')
+    ax2.set_ylim(min(heights), max(heights))  # 높이 축 범위 명시적 설정
     ax2.grid(True, alpha=0.2, linestyle='--', linewidth=0.5)
     cbar2 = plt.colorbar(contour2, ax=ax2)
     cbar2.set_label('Y Value', fontsize=11)
@@ -178,6 +186,7 @@ def plot_contour_2d(csv_file, output_file=None, break_info=None):
     ax3.set_xlabel('Degree (°)', fontsize=12)
     ax3.set_ylabel('Height (m)', fontsize=12)
     ax3.set_title('Z Value', fontsize=14, fontweight='bold')
+    ax3.set_ylim(min(heights), max(heights))  # 높이 축 범위 명시적 설정
     ax3.grid(True, alpha=0.2, linestyle='--', linewidth=0.5)
     cbar3 = plt.colorbar(contour3, ax=ax3)
     cbar3.set_label('Z Value', fontsize=11)

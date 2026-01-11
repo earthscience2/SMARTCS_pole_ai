@@ -1,6 +1,6 @@
-import poledb as PDB
 import os
-from tqdm import tqdm  
+from tqdm import tqdm
+from config import poledb as PDB  
 
 global in_num
 global out_num

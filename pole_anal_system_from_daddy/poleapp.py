@@ -2,7 +2,7 @@
 from flask import Flask, jsonify, request
 import sys, getopt
 import pole_anal
-import poledb
+from config import poledb
 import threading
 import time
 

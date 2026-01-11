@@ -20,14 +20,13 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-import poledb as PDB
+from config import poledb as PDB
 
-# 서버 정보
+# 서버 정보 (JT 서버는 데이터 수집 대상에서 제외)
 SERVERS = {
     "main": "메인서버",
     "is": "이수서버",
     "kh": "건화서버",
-    "jt": "제이티엔지니어링"
 }
 
 def find_latest_json_file():
@@ -386,15 +385,28 @@ def process_all_poles_from_json(json_file_path):
         'normal_poles': 0,
         'skipped_poles': 0,
         'skipped_existing': 0,  # 이미 존재하는 전주
+        'skipped_limit': 0,     # 정상 데이터 개수 제한으로 인해 건너뛴 전주
         'error_poles': 0
     }
     
-    # 각 서버별로 처리
+    # 각 서버별 데이터
     servers_data = data.get('servers', {})
     
+    # ------------------------------------------------------------------
+    # 1단계: 파단(B) 전주 데이터 먼저 수집
+    # ------------------------------------------------------------------
+    print("\n" + "=" * 60)
+    print("1단계: 파단(B) 전주 데이터 수집 시작")
+    print("=" * 60)
+    
     for server, server_info in servers_data.items():
+        # JT 서버 데이터는 사용하지 않음
+        if server == "jt":
+            print(f"\n[JT 서버] 데이터 수집 대상에서 제외합니다.")
+            continue
+        
         print(f"\n{'='*60}")
-        print(f"[{SERVERS[server]}] 처리 시작")
+        print(f"[{SERVERS[server]}] (1단계) 파단 전주 처리 시작")
         print(f"{'='*60}")
         
         try:
@@ -412,8 +424,8 @@ def process_all_poles_from_json(json_file_path):
                 
                 print(f"  전주 개수: {total_poles_in_project}개")
                 
-                # 각 전주 처리
-                for pole_idx, poleid in enumerate(tqdm(pole_ids, desc=f"  {project_name} 처리 중"), 1):
+                # 각 전주 처리 (파단만 저장)
+                for pole_idx, poleid in enumerate(tqdm(pole_ids, desc=f"  {project_name} (파단 수집)"), 1):
                     stats['total_poles'] += 1
                     
                     try:
@@ -425,6 +437,10 @@ def process_all_poles_from_json(json_file_path):
                             stats['skipped_poles'] += 1
                             continue
                         
+                        # 파단 전주만 1단계에서 저장
+                        if anal_result['breakstate'] != 'B':
+                            continue
+                        
                         # 원본 데이터 저장
                         result = save_pole_raw_data(server, project_name, poleid, anal_result, output_base_dir)
                         
@@ -433,10 +449,7 @@ def process_all_poles_from_json(json_file_path):
                             stats['skipped_existing'] += 1
                         elif result:
                             # 저장 성공
-                            if anal_result['breakstate'] == 'B':
-                                stats['break_poles'] += 1
-                            else:
-                                stats['normal_poles'] += 1
+                            stats['break_poles'] += 1
                         else:
                             # 저장 실패
                             stats['error_poles'] += 1
@@ -446,7 +459,94 @@ def process_all_poles_from_json(json_file_path):
                         stats['error_poles'] += 1
                         continue
             
-            print(f"\n[{SERVERS[server]}] 처리 완료")
+            print(f"\n[{SERVERS[server]}] (1단계) 파단 전주 처리 완료")
+        
+        except Exception as e:
+            print(f"[{SERVERS[server]}] 서버 처리 오류: {e}")
+            continue
+    
+    # 파단 전주 개수 기준으로 정상 전주 최대 개수 결정 (10배)
+    max_normal_poles = stats['break_poles'] * 10
+    
+    print("\n" + "=" * 60)
+    print("2단계: 정상(N) 전주 데이터 수집 시작")
+    print("=" * 60)
+    print(f"파단 전주 개수: {stats['break_poles']}개")
+    print(f"정상 전주 최대 수집 개수 (파단의 10배): {max_normal_poles}개")
+    
+    # 현재까지 수집된 정상 전주 개수 (이번 실행에서 새로 저장된 것 기준)
+    current_normal_poles = 0
+    
+    # ------------------------------------------------------------------
+    # 2단계: 정상(N) 전주 데이터 수집 (최대 파단의 10배까지)
+    # ------------------------------------------------------------------
+    for server, server_info in servers_data.items():
+        # JT 서버 데이터는 사용하지 않음
+        if server == "jt":
+            continue
+        
+        # 더 이상 수집할 수 있는 정상 전주가 없으면 종료
+        if current_normal_poles >= max_normal_poles and max_normal_poles > 0:
+            break
+        
+        print(f"\n{'='*60}")
+        print(f"[{SERVERS[server]}] (2단계) 정상 전주 처리 시작")
+        print(f"{'='*60}")
+        
+        try:
+            # 서버 연결
+            PDB.poledb_init(server)
+            
+            projects_data = server_info.get('projects', {})
+            total_projects = len(projects_data)
+            
+            for project_idx, (project_name, project_info) in enumerate(projects_data.items(), 1):
+                print(f"\n[{project_idx}/{total_projects}] 프로젝트: {project_name}")
+                
+                pole_ids = project_info.get('pole_ids', [])
+                total_poles_in_project = len(pole_ids)
+                
+                print(f"  전주 개수: {total_poles_in_project}개")
+                
+                # 각 전주 처리 (정상만, 제한 개수까지)
+                for pole_idx, poleid in enumerate(tqdm(pole_ids, desc=f"  {project_name} (정상 수집)"), 1):
+                    # 더 이상 수집할 수 있는 정상 전주가 없으면 루프 종료
+                    if current_normal_poles >= max_normal_poles and max_normal_poles > 0:
+                        break
+                    
+                    try:
+                        # 2차 분석 결과 조회
+                        anal_result = get_pole_anal2_result(server, project_name, poleid)
+                        
+                        if anal_result is None:
+                            # B나 N이 아닌 경우 (저장하지 않음)
+                            stats['skipped_poles'] += 1
+                            continue
+                        
+                        # 정상 전주만 2단계에서 저장
+                        if anal_result['breakstate'] != 'N':
+                            continue
+                        
+                        # 원본 데이터 저장
+                        result = save_pole_raw_data(server, project_name, poleid, anal_result, output_base_dir)
+                        
+                        if result is None:
+                            # 이미 존재하는 경우
+                            stats['skipped_existing'] += 1
+                        elif result:
+                            # 저장 성공
+                            stats['normal_poles'] += 1
+                            current_normal_poles += 1
+                        else:
+                            # 저장 실패
+                            stats['error_poles'] += 1
+                    
+                    except Exception as e:
+                        print(f"    [{poleid}] 처리 오류: {e}")
+                        stats['error_poles'] += 1
+                        continue
+            
+            print(f"\n[{SERVERS[server]}] (2단계) 정상 전주 처리 완료")
         
         except Exception as e:
             print(f"[{SERVERS[server]}] 서버 처리 오류: {e}")
@@ -458,9 +558,11 @@ def process_all_poles_from_json(json_file_path):
     print(f"{'='*60}")
     print(f"전체 전주 수: {stats['total_poles']}개")
     print(f"파단 전주: {stats['break_poles']}개")
-    print(f"정상 전주: {stats['normal_poles']}개")
+    print(f"정상 전주 (새로 저장됨): {stats['normal_poles']}개")
+    print(f"정상 전주 최대 허용 개수(파단의 10배): {max_normal_poles}개")
     print(f"제외된 전주 (B/N 외): {stats['skipped_poles']}개")
     print(f"이미 존재하는 전주 (건너뜀): {stats['skipped_existing']}개")
+    print(f"정상 전주 개수 제한으로 건너뜀: {stats['skipped_limit']}개")
     print(f"오류 발생 전주: {stats['error_poles']}개")
     print(f"\n저장 위치: {output_base_dir}")
     print(f"  - 파단 전주: {output_base_dir}/break/")

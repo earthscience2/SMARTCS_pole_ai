@@ -2,7 +2,7 @@ from scipy.signal import detrend
 import pandas as pd
 import numpy as np
 import logger
-import poledb
+from config import poledb
 import magpylib as mag3
 from magpylib.magnet import Cylinder
 from magpylib import Collection

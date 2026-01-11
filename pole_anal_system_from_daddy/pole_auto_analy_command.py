@@ -12,7 +12,7 @@ import pandas as pd
 from scipy import signal
 import logger
 import magpylib_simulation_m as mag_m
-import poledb as PDB
+from config import poledb as PDB
 import slack
 import ast
 import maintime

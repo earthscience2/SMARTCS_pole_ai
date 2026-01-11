@@ -18,14 +18,13 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-import poledb as PDB
+from config import poledb as PDB
 
-# 서버 정보
+# 서버 정보 (JT 서버는 데이터 수집 대상에서 제외)
 SERVERS = {
     "main": "메인서버",
     "is": "이수서버",
     "kh": "건화서버",
-    "jt": "제이티엔지니어링"
 }
 
 def find_latest_project_list_json(server=None):

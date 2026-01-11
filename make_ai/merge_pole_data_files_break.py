@@ -56,7 +56,7 @@ HAS_POLEDB = False
 PDB = None
 
 try:
-    import poledb as PDB
+    from config import poledb as PDB
     HAS_POLEDB = True
     print(f"poledb 모듈 import 성공 (경로: {parent_dir})")
 except ImportError as e:

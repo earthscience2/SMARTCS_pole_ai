@@ -13,8 +13,8 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-import poledb as PDB
-import poleconf
+from config import poledb as PDB
+from config import poleconf
 
 def test_server_connection(server_name):
     """
@@ -27,12 +27,11 @@ def test_server_connection(server_name):
     print(f"[{server_name.upper()} 서버] 연결 테스트 시작")
     print("=" * 60)
     
-    # 서버별 호스트 정보 출력
+    # 서버별 호스트 정보 출력 (JT 서버는 테스트 대상에서 제외)
     server_hosts = {
         'main': '210.105.85.3',
         'is': 'smartpole-is.iptime.org:33306',
         'kh': 'smartpole-kh.iptime.org:33306',
-        'jt': 'smartpole-jt.iptime.org:33306'
     }
     
     if server_name in server_hosts:
@@ -41,9 +40,15 @@ def test_server_connection(server_name):
     else:
         print(f"경고: 알 수 없는 서버 이름: {server_name}")
         return False
-    
-    print(f"데이터베이스: {poleconf.poledb_dbname}")
-    print(f"사용자: {poleconf.poledb_user}")
+
+    # poleconf.db() 함수에서 DB 설정값을 가져옴
+    try:
+        _, dbname, user, _ = poleconf.db(server_name)
+        print(f"데이터베이스: {dbname}")
+        print(f"사용자: {user}")
+    except Exception as e:
+        print(f"DB 설정 조회 중 오류: {e}")
+        return False
     print("-" * 60)
     
     # 1. 연결 시도
@@ -120,7 +125,8 @@ def test_all_servers():
     """
     모든 서버 연결 테스트
     """
-    servers = ['main', 'is', 'kh', 'jt']
+    # JT 서버는 테스트 대상에서 제외
+    servers = ['main', 'is', 'kh']
     results = {}
     
     print("\n" + "=" * 60)

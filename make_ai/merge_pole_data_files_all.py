@@ -30,7 +30,7 @@ HAS_POLEDB = False
 PDB = None
 
 try:
-    import poledb as PDB
+    from config import poledb as PDB
     HAS_POLEDB = True
     print(f"poledb 모듈 import 성공 (경로: {parent_dir})")
 except ImportError as e:
@@ -42,12 +42,15 @@ except ImportError as e:
 # ============================================================================
 # 설정
 # ============================================================================
-# 기본 파단 전주용 머지 스크립트:
-#   - 입력:  make_ai/3. raw_pole_data/break/프로젝트명/전주ID/*.csv
-#   - 출력:  make_ai/4. merge_pole_data/break_merged/프로젝트명/전주ID/{poleid}_OUT_merged.csv
-#     (5. crop_break_region_from_merged.py와 동일한 디렉토리 구조 사용)
-INPUT_BASE_DIR = "3. raw_pole_data/break"  # 입력 폴더 (파단 전주 원본 데이터)
-OUTPUT_BASE_DIR = "4. merge_pole_data/break_merged"  # 출력 폴더 (머지 결과)
+# 파단 및 정상 전주용 머지 스크립트:
+#   - 입력:  make_ai/3. raw_pole_data/break/프로젝트명/전주ID/*.csv (파단)
+#           make_ai/3. raw_pole_data/normal/프로젝트명/전주ID/*.csv (정상)
+#   - 출력:  make_ai/4. merge_pole_data/break_merged/프로젝트명/전주ID/{poleid}_OUT_merged.csv (파단)
+#           make_ai/4. merge_pole_data/normal_merged/프로젝트명/전주ID/{poleid}_OUT_merged.csv (정상)
+INPUT_BASE_DIR_BREAK = "3. raw_pole_data/break"  # 입력 폴더 (파단 전주 원본 데이터)
+INPUT_BASE_DIR_NORMAL = "3. raw_pole_data/normal"  # 입력 폴더 (정상 전주 원본 데이터)
+OUTPUT_BASE_DIR_BREAK = "4. merge_pole_data/break_merged"  # 출력 폴더 (파단 머지 결과)
+OUTPUT_BASE_DIR_NORMAL = "4. merge_pole_data/normal_merged"  # 출력 폴더 (정상 머지 결과)
 
 MERGE_METHOD = "separate"  # "separate": IN/OUT 분리, "combined": 하나로 합침
 
@@ -109,8 +112,84 @@ def merge_pole_data_files(pole_dir, output_dir, server, project_name=None):
     
     poleid = os.path.basename(pole_dir)
     
-    # break_info.json 파일 읽기
-    break_info = load_break_info_json(pole_dir)
+    # break_info.json 또는 normal_info.json 파일 읽기
+    pole_info = load_pole_info_json(pole_dir)
+    
+    # info.json 파일이 없으면 머지 진행하지 않음
+    if pole_info is None:
+        print(f"    경고 [{poleid}]: break_info.json 또는 normal_info.json이 없어서 머지를 건너뜁니다.")
+        return False
+    
+    # breakstate 확인
+    breakstate = pole_info.get('breakstate')
+    
+    # 파단 전주인 경우 추가 검증
+    if breakstate == 'B':
+        # breakheight와 breakdegree가 모두 유효한 값인지 확인
+        breakheight = pole_info.get('breakheight')
+        breakdegree = pole_info.get('breakdegree')
+        
+        # breakheight 유효성 검사
+        is_breakheight_valid = False
+        breakheight_float = None
+        if breakheight is not None:
+            try:
+                breakheight_float = float(breakheight)
+                if not (isinstance(breakheight_float, float) and np.isnan(breakheight_float)):
+                    # 파단 높이가 3미터 이상이면 스킵
+                    if breakheight_float < 3.0:
+                        is_breakheight_valid = True
+                    else:
+                        print(f"    경고 [{poleid}]: breakheight({breakheight_float:.2f}m)가 3미터 이상이어서 머지를 건너뜁니다.")
+            except (ValueError, TypeError):
+                pass
+        
+        # breakdegree 유효성 검사
+        is_breakdegree_valid = False
+        breakdegree_float = None
+        if breakdegree is not None:
+            try:
+                breakdegree_float = float(breakdegree)
+                if not (isinstance(breakdegree_float, float) and np.isnan(breakdegree_float)):
+                    # 각도가 0~360 사이인지 확인
+                    if 0.0 <= breakdegree_float <= 360.0:
+                        is_breakdegree_valid = True
+                    else:
+                        print(f"    경고 [{poleid}]: breakdegree({breakdegree_float:.1f}°)가 0~360 범위를 벗어나서 머지를 건너뜁니다.")
+            except (ValueError, TypeError):
+                pass
+        
+        # 둘 중 하나라도 유효하지 않으면 스킵
+        if not is_breakheight_valid or not is_breakdegree_valid:
+            if is_breakheight_valid and not is_breakdegree_valid:
+                # breakheight는 유효하지만 breakdegree가 유효하지 않은 경우
+                pass  # 이미 위에서 경고 메시지 출력됨
+            elif not is_breakheight_valid and is_breakdegree_valid:
+                # breakdegree는 유효하지만 breakheight가 유효하지 않은 경우
+                pass  # 이미 위에서 경고 메시지 출력됨
+            else:
+                # 둘 다 유효하지 않은 경우
+                print(f"    경고 [{poleid}]: breakheight({breakheight}) 또는 breakdegree({breakdegree})가 유효하지 않아서 머지를 건너뜁니다.")
+            return False
+    elif breakstate != 'N':
+        # breakstate가 'B'도 'N'도 아닌 경우
+        print(f"    경고 [{poleid}]: breakstate({breakstate})가 유효하지 않아서 머지를 건너뜁니다.")
+        return False
+    
+    # 정상 전주는 검증 없이 진행
+    
+    # 이미 머지된 파일이 있는지 확인
+    os.makedirs(output_dir, exist_ok=True)
+    if MERGE_METHOD == "separate":
+        out_output_path = os.path.join(output_dir, f"{poleid}_OUT_merged.csv")
+        if os.path.exists(out_output_path):
+            print(f"    건너뛰기 [{poleid}]: 이미 머지된 파일이 존재합니다: {out_output_path}")
+            return True  # 이미 존재하므로 성공으로 간주
+    elif MERGE_METHOD == "combined":
+        combined_output_path = os.path.join(output_dir, f"{poleid}_merged.csv")
+        if os.path.exists(combined_output_path):
+            print(f"    건너뛰기 [{poleid}]: 이미 머지된 파일이 존재합니다: {combined_output_path}")
+            return True  # 이미 존재하므로 성공으로 간주
     
     # 실제로 생성된 파일 수 추적
     files_created = 0
@@ -131,7 +210,7 @@ def merge_pole_data_files(pole_dir, output_dir, server, project_name=None):
     # OUT 데이터만 합치기
     if MERGE_METHOD == "separate":
         # OUT 데이터 합치기
-        out_merged = merge_axis_data(out_files, 'OUT', poleid, server, project_name, break_info)
+        out_merged = merge_axis_data(out_files, 'OUT', poleid, server, project_name, pole_info)
         if out_merged is not None and not out_merged.empty:
             # 출력 폴더 생성 (파일을 저장하기 직전에)
             os.makedirs(output_dir, exist_ok=True)
@@ -143,24 +222,24 @@ def merge_pole_data_files(pole_dir, output_dir, server, project_name=None):
             if plot_contour_2d is not None:
                 try:
                     image_output_path = os.path.join(output_dir, f"{poleid}_OUT_merged_contour_2d.png")
-                    plot_contour_2d(out_output_path, image_output_path, break_info)
+                    plot_contour_2d(out_output_path, image_output_path, pole_info)
                 except Exception:
                     pass
             
-            # 파단 위치 메타데이터 파일 저장 (break_info가 있고 breakstate가 'B'인 경우만)
-            if break_info is not None and break_info.get('breakstate') == 'B':
+            # 파단 위치 메타데이터 파일 저장 (pole_info가 있고 breakstate가 'B'인 경우만)
+            if pole_info is not None and pole_info.get('breakstate') == 'B':
                 try:
                     metadata_output_path = os.path.join(output_dir, f"{poleid}_break_metadata.json")
                     image_output_path = os.path.join(output_dir, f"{poleid}_OUT_merged_contour_2d.png")
                     metadata = {
                         'poleid': poleid,
-                        'project_name': break_info.get('project_name'),
-                        'breakstate': break_info.get('breakstate'),
-                        'breakheight': break_info.get('breakheight'),
-                        'breakdegree': break_info.get('breakdegree'),
+                        'project_name': pole_info.get('project_name'),
+                        'breakstate': pole_info.get('breakstate'),
+                        'breakheight': pole_info.get('breakheight'),
+                        'breakdegree': pole_info.get('breakdegree'),
                         'csv_file': os.path.basename(out_output_path),
                         'image_file': os.path.basename(image_output_path) if os.path.exists(image_output_path) else None,
-                        'measurements_count': len(break_info.get('measurements', {}))
+                        'measurements_count': len(pole_info.get('measurements', {}))
                     }
                     with open(metadata_output_path, 'w', encoding='utf-8') as f:
                         json.dump(metadata, f, ensure_ascii=False, indent=2)
@@ -169,7 +248,7 @@ def merge_pole_data_files(pole_dir, output_dir, server, project_name=None):
     
     elif MERGE_METHOD == "combined":
         # combined 방식은 OUT만 처리
-        out_merged = merge_all_data({}, out_files, poleid, server, project_name, break_info)
+        out_merged = merge_all_data({}, out_files, poleid, server, project_name, pole_info)
         if out_merged is not None and not out_merged.empty:
             os.makedirs(output_dir, exist_ok=True)
             combined_output_path = os.path.join(output_dir, f"{poleid}_merged.csv")
@@ -180,24 +259,24 @@ def merge_pole_data_files(pole_dir, output_dir, server, project_name=None):
             if plot_contour_2d is not None:
                 try:
                     image_output_path = os.path.join(output_dir, f"{poleid}_merged_contour_2d.png")
-                    plot_contour_2d(combined_output_path, image_output_path, break_info)
+                    plot_contour_2d(combined_output_path, image_output_path, pole_info)
                 except Exception:
                     pass
             
-            # 파단 위치 메타데이터 파일 저장 (break_info가 있고 breakstate가 'B'인 경우만)
-            if break_info is not None and break_info.get('breakstate') == 'B':
+            # 파단 위치 메타데이터 파일 저장 (pole_info가 있고 breakstate가 'B'인 경우만)
+            if pole_info is not None and pole_info.get('breakstate') == 'B':
                 try:
                     metadata_output_path = os.path.join(output_dir, f"{poleid}_break_metadata.json")
                     image_output_path = os.path.join(output_dir, f"{poleid}_merged_contour_2d.png")
                     metadata = {
                         'poleid': poleid,
-                        'project_name': break_info.get('project_name'),
-                        'breakstate': break_info.get('breakstate'),
-                        'breakheight': break_info.get('breakheight'),
-                        'breakdegree': break_info.get('breakdegree'),
+                        'project_name': pole_info.get('project_name'),
+                        'breakstate': pole_info.get('breakstate'),
+                        'breakheight': pole_info.get('breakheight'),
+                        'breakdegree': pole_info.get('breakdegree'),
                         'csv_file': os.path.basename(combined_output_path),
                         'image_file': os.path.basename(image_output_path) if os.path.exists(image_output_path) else None,
-                        'measurements_count': len(break_info.get('measurements', {}))
+                        'measurements_count': len(pole_info.get('measurements', {}))
                     }
                     with open(metadata_output_path, 'w', encoding='utf-8') as f:
                         json.dump(metadata, f, ensure_ascii=False, indent=2)
@@ -207,19 +286,20 @@ def merge_pole_data_files(pole_dir, output_dir, server, project_name=None):
     # 파일이 생성되지 않았으면 False 반환
     return files_created > 0
 
-def load_break_info_json(pole_dir):
+def load_pole_info_json(pole_dir):
     """
-    break_info.json 파일을 읽어서 측정 정보 반환
+    break_info.json 또는 normal_info.json 파일을 읽어서 측정 정보 반환
     
     Args:
         pole_dir: 전주 데이터 폴더 경로
     
     Returns:
-        dict: break_info.json 내용 또는 None
+        dict: break_info.json 또는 normal_info.json 내용 또는 None
     """
     poleid = os.path.basename(pole_dir)
-    break_info_file = os.path.join(pole_dir, f"{poleid}_break_info.json")
     
+    # break_info.json 우선 확인
+    break_info_file = os.path.join(pole_dir, f"{poleid}_break_info.json")
     if os.path.exists(break_info_file):
         try:
             import json
@@ -228,6 +308,18 @@ def load_break_info_json(pole_dir):
         except Exception as e:
             print(f"    경고 [{poleid}]: break_info.json 읽기 실패: {e}")
             return None
+    
+    # normal_info.json 확인
+    normal_info_file = os.path.join(pole_dir, f"{poleid}_normal_info.json")
+    if os.path.exists(normal_info_file):
+        try:
+            import json
+            with open(normal_info_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"    경고 [{poleid}]: normal_info.json 읽기 실패: {e}")
+            return None
+    
     return None
 
 def get_measurement_range_from_break_info(break_info, measno, devicetype='OUT'):
@@ -259,106 +351,6 @@ def get_measurement_range_from_break_info(break_info, measno, devicetype='OUT'):
         'stdegree': meas_info.get('stdegree'),
         'eddegree': meas_info.get('eddegree')
     }
-
-def get_measurement_range_from_db(poleid, measno, devicetype='OUT'):
-    """
-    데이터베이스에서 측정 범위 정보 조회
-    
-    Args:
-        poleid: 전주 ID
-        measno: 측정 번호
-        devicetype: 측정 타입 ('IN' 또는 'OUT')
-    
-    Returns:
-        dict: 측정 범위 정보 (stheight, edheight, stdegree, eddegree) 또는 None
-    """
-    if not HAS_POLEDB:
-        return None
-    
-    try:
-        # poledb_conn이 None이면 연결되지 않은 상태
-        if not hasattr(PDB, 'poledb_conn') or PDB.poledb_conn is None:
-            return None
-        
-        # get_meas_result(poleid, dtype) 호출
-        meas_result = PDB.get_meas_result(poleid, devicetype)
-        if meas_result is None or meas_result.empty:
-            return None
-        
-        # 해당 측정번호의 정보 찾기
-        measno_dtype = meas_result['measno'].dtype
-        
-        try:
-            measno_int = int(measno)
-        except (ValueError, TypeError):
-            measno_int = measno
-        
-        if pd.api.types.is_integer_dtype(measno_dtype):
-            meas_info = meas_result[meas_result['measno'] == measno_int]
-        else:
-            meas_info = meas_result[meas_result['measno'] == measno]
-            if meas_info.empty:
-                try:
-                    meas_info = meas_result[meas_result['measno'] == measno_int]
-                except:
-                    pass
-        
-        if meas_info.empty:
-            return None
-        
-        meas_info = meas_info.iloc[0]
-        
-        # 컬럼명 확인 (대소문자 구분)
-        stheight_val = meas_info.get('stheight') or meas_info.get('stHeight')
-        edheight_val = meas_info.get('edheight') or meas_info.get('edHeight')
-        stdegree_val = meas_info.get('stdegree') or meas_info.get('stDegree')
-        eddegree_val = meas_info.get('eddegree') or meas_info.get('edDegree')
-        
-        # 높이 처리
-        if stheight_val is None or pd.isna(stheight_val):
-            stheight = 0
-        else:
-            stheight = float(stheight_val)
-        
-        if edheight_val is None or pd.isna(edheight_val):
-            if devicetype == 'OUT':
-                edheight = 0
-            else:
-                depth = meas_info.get('depth') or meas_info.get('Depth')
-                if depth is not None and not pd.isna(depth):
-                    adjusted_stheight = float(stheight) - float(depth)
-                    edheight = adjusted_stheight
-                    stheight = adjusted_stheight
-                else:
-                    edheight = float(stheight)
-        else:
-            edheight = float(edheight_val)
-        
-        # 각도 처리 (OUT은 기본 0~360도)
-        if stdegree_val is None or pd.isna(stdegree_val):
-            stdegree = OUT_DEGREE_MIN
-        else:
-            stdegree = float(stdegree_val)
-        
-        if eddegree_val is None or pd.isna(eddegree_val):
-            eddegree = OUT_DEGREE_MAX
-        else:
-            eddegree = float(eddegree_val)
-        
-        # 유효성 검증 (NaN, Inf 체크)
-        if not (np.isfinite(stheight) and np.isfinite(edheight) and 
-                np.isfinite(stdegree) and np.isfinite(eddegree)):
-            return None
-        
-        return {
-            'stdegree': stdegree,
-            'eddegree': eddegree,
-            'stheight': stheight,
-            'edheight': edheight
-        }
-    except Exception as e:
-        print(f"    DB 조회 오류 [{poleid} measno={measno} {devicetype}]: {e}")
-        return None
 
 def apply_smoothing_to_result(result_df):
     """
@@ -725,31 +717,17 @@ def merge_axis_data(file_dict, devicetype, poleid, server, project_name=None, br
                             if measno is not None:
                                 measno = int(measno)
                 
-                # break_info.json에 없으면 DB에서 조회
-                if measno is None and HAS_POLEDB:
-                    try:
-                        meas_result = PDB.get_meas_result(poleid, file_devicetype)
-                        if meas_result is not None and not meas_result.empty:
-                            if file_index <= len(meas_result):
-                                measno = int(meas_result.iloc[file_index - 1]['measno'])
-                            else:
-                                continue
-                    except Exception:
-                        continue
-                
-                # measno를 찾지 못했으면 스킵
+                # measno를 찾지 못했으면 스킵 (break_info.json에서만 조회)
                 if measno is None:
                     continue
                 
-                # 측정 범위 정보 조회 (break_info.json 우선, 없으면 DB에서 조회)
+                # 측정 범위 정보 조회 (break_info.json에서만 조회)
                 meas_range = None
                 
                 if break_info is not None:
                     meas_range = get_measurement_range_from_break_info(break_info, measno, file_devicetype)
                 
-                if meas_range is None and HAS_POLEDB:
-                    meas_range = get_measurement_range_from_db(poleid, measno, file_devicetype)
-                
+                # break_info.json에 측정 범위 정보가 없으면 스킵
                 if meas_range is None:
                     continue
                 
@@ -798,16 +776,11 @@ def merge_axis_data(file_dict, devicetype, poleid, server, project_name=None, br
     all_stheights = [m['meas_range']['stheight'] for m in all_measurements.values()]
     all_edheights = [m['meas_range']['edheight'] for m in all_measurements.values()]
     
-    # 전체 높이 범위 (합집합)
-    common_stheight = min(all_stheights)
-    common_edheight = max(all_edheights)
+    # 전체 높이 범위 (합집합) - 항상 낮은 값부터 높은 값 순서로 정규화
+    min_height = min(min(all_stheights), min(all_edheights))
+    max_height = max(max(all_stheights), max(all_edheights))
     
-    print(f"    디버깅 [{poleid}]: 공통 높이 범위 {common_stheight:.2f}~{common_edheight:.2f}m")
-    
-    # 목표 높이 배열 생성 (10cm 간격)
-    # 높이 범위가 역순일 수 있으므로 min/max로 정규화
-    min_height = min(common_stheight, common_edheight)
-    max_height = max(common_stheight, common_edheight)
+    print(f"    디버깅 [{poleid}]: 공통 높이 범위 {min_height:.2f}~{max_height:.2f}m")
     
     if min_height == max_height:
         # 높이가 하나뿐인 경우
@@ -1012,69 +985,78 @@ def merge_all_data(in_files, out_files, poleid, server, project_name=None, break
 
 def process_all_poles():
     """
-    모든 전주 데이터 파일 합치기
+    모든 전주 데이터 파일 합치기 (파단 및 정상 전주 모두 처리)
     """
-    input_dir = os.path.join(current_dir, INPUT_BASE_DIR)
-    output_dir = os.path.join(current_dir, OUTPUT_BASE_DIR)
+    # 파단 전주와 정상 전주 모두 처리
+    input_dirs = [
+        (os.path.join(current_dir, INPUT_BASE_DIR_BREAK), os.path.join(current_dir, OUTPUT_BASE_DIR_BREAK), "파단"),
+        (os.path.join(current_dir, INPUT_BASE_DIR_NORMAL), os.path.join(current_dir, OUTPUT_BASE_DIR_NORMAL), "정상")
+    ]
     
-    if not os.path.exists(input_dir):
-        print(f"오류: 입력 폴더를 찾을 수 없습니다: {input_dir}")
-        return
-    
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # 프로젝트 목록 가져오기
-    projects = [d for d in os.listdir(input_dir) if os.path.isdir(os.path.join(input_dir, d))]
-    
-    print(f"전체 프로젝트 수: {len(projects)}개")
     print(f"합치기 방법: {MERGE_METHOD}")
     print(f"보간 간격: 높이 {HEIGHT_STEP*100}cm, 각도 {DEGREE_STEP}도")
     print(f"각도 범위: {OUT_DEGREE_MIN}~{OUT_DEGREE_MAX}도")
+    print("주의: break_info.json 또는 normal_info.json에서만 측정 정보를 가져옵니다 (DB 접속 없음)")
     
-    # poledb 초기화
-    if HAS_POLEDB:
-        if PDB.poledb_conn is None:
-            try:
-                PDB.poledb_init()
-                print("데이터베이스 연결 성공")
-            except Exception as e:
-                print(f"데이터베이스 연결 실패: {e}")
-                return
+    total_poles_all = 0
+    success_count_all = 0
     
-    total_poles = 0
-    success_count = 0
-    
-    for project_idx, project_name in enumerate(projects, 1):
-        project_dir = os.path.join(input_dir, project_name)
-        pole_dirs = [d for d in os.listdir(project_dir) if os.path.isdir(os.path.join(project_dir, d))]
+    for input_dir, output_dir, category in input_dirs:
+        if not os.path.exists(input_dir):
+            print(f"\n경고: {category} 전주 입력 폴더를 찾을 수 없습니다: {input_dir}")
+            continue
         
-        print(f"\n[{project_idx}/{len(projects)}] 프로젝트: {project_name}")
-        print(f"  전주 수: {len(pole_dirs)}개")
+        os.makedirs(output_dir, exist_ok=True)
         
-        project_output_dir = os.path.join(output_dir, project_name)
-        project_success_count = 0
+        # 프로젝트 목록 가져오기
+        projects = [d for d in os.listdir(input_dir) if os.path.isdir(os.path.join(input_dir, d))]
         
-        for poleid in tqdm(pole_dirs, desc=f"  {project_name} 처리 중"):
-            pole_dir = os.path.join(project_dir, poleid)
-            pole_output_dir = os.path.join(project_output_dir, poleid)
+        print(f"\n{'='*60}")
+        print(f"[{category} 전주] 전체 프로젝트 수: {len(projects)}개")
+        print(f"{'='*60}")
+        
+        total_poles = 0
+        success_count = 0
+        
+        for project_idx, project_name in enumerate(projects, 1):
+            project_dir = os.path.join(input_dir, project_name)
+            pole_dirs = [d for d in os.listdir(project_dir) if os.path.isdir(os.path.join(project_dir, d))]
             
-            total_poles += 1
+            print(f"\n[{project_idx}/{len(projects)}] 프로젝트: {project_name}")
+            print(f"  전주 수: {len(pole_dirs)}개")
             
-            if merge_pole_data_files(pole_dir, pole_output_dir, None, project_name):
-                success_count += 1
-                project_success_count += 1
-            else:
-                if os.path.exists(pole_output_dir) and not os.listdir(pole_output_dir):
-                    os.rmdir(pole_output_dir)
+            project_output_dir = os.path.join(output_dir, project_name)
+            project_success_count = 0
+            
+            for poleid in tqdm(pole_dirs, desc=f"  {project_name} 처리 중"):
+                pole_dir = os.path.join(project_dir, poleid)
+                pole_output_dir = os.path.join(project_output_dir, poleid)
+                
+                total_poles += 1
+                total_poles_all += 1
+                
+                if merge_pole_data_files(pole_dir, pole_output_dir, None, project_name):
+                    success_count += 1
+                    success_count_all += 1
+                    project_success_count += 1
+                else:
+                    if os.path.exists(pole_output_dir) and not os.listdir(pole_output_dir):
+                        os.rmdir(pole_output_dir)
+            
+            if project_success_count == 0 and os.path.exists(project_output_dir) and not os.listdir(project_output_dir):
+                os.rmdir(project_output_dir)
         
-        if project_success_count == 0 and os.path.exists(project_output_dir) and not os.listdir(project_output_dir):
-            os.rmdir(project_output_dir)
+        print(f"\n[{category} 전주] 처리 완료")
+        print(f"  처리된 전주 수: {total_poles}개")
+        print(f"  성공: {success_count}개")
+        print(f"  출력 위치: {output_dir}")
     
     print("\n" + "=" * 60)
     print("전체 처리 완료")
-    print(f"처리된 전주 수: {total_poles}개")
-    print(f"성공: {success_count}개")
-    print(f"출력 위치: {output_dir}")
+    print(f"전체 처리된 전주 수: {total_poles_all}개")
+    print(f"전체 성공: {success_count_all}개")
+    print(f"  - 파단 전주 출력: {OUTPUT_BASE_DIR_BREAK}")
+    print(f"  - 정상 전주 출력: {OUTPUT_BASE_DIR_NORMAL}")
 
 if __name__ == "__main__":
     print("=" * 60)

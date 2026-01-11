@@ -22,7 +22,7 @@ import math
 import threading
 
 import magpylib_simulation_m as mag_m
-import poledb as PDB
+from config import poledb as PDB
 import numpy as np
 import matplotlib.pyplot as plt
 

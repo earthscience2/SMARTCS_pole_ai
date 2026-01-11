@@ -13,7 +13,7 @@ import pyqtgraph as pg
 from scipy import signal
 
 import magpylib_simulation_m as mag_m
-import poledb as PDB
+from config import poledb as PDB
 
 from scipy.signal import detrend
 PDB.poledb_init()
