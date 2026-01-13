@@ -208,6 +208,10 @@ def save_pole_raw_data(server, project_name, poleid, anal_result, output_base_di
         # 이미 데이터가 존재하는지 확인
         data_exists = check_pole_data_exists(output_base_dir, project_name, poleid, anal_result)
         
+        # 데이터가 이미 존재하면 조기 반환 (DB 조회 및 JSON 저장도 건너뛰기)
+        if data_exists:
+            return None  # 이미 존재함을 의미
+        
         # 파단/정상에 따라 폴더 구분
         if anal_result['breakstate'] == 'B':
             category = 'break'
@@ -229,44 +233,43 @@ def save_pole_raw_data(server, project_name, poleid, anal_result, output_base_di
         num_sig_out = re_out.shape[0] if re_out is not None and not re_out.empty else 0
         num_sig_in = re_in.shape[0] if re_in is not None and not re_in.empty else 0
         
-        # 데이터가 없을 때만 CSV 파일 저장
-        if not data_exists:
-            # IN 데이터 저장
-            for kk in range(num_sig_in):
-                stype = 'IN'
-                num = int(re_in['measno'][kk])
-                time = str(re_in['sttime'][kk])
-                time = (time.split(" "))[0] if " " in time else time
-                
-                in_x = PDB.get_meas_data(poleid, num, stype, 'x')
-                if in_x is not None and not in_x.empty:
-                    filename = f"{poleid}_{kk+1}_{time}_IN_x{break_info}.csv"
-                    in_x.to_csv(os.path.join(pole_dir, filename), index=False)
+        # CSV 파일 저장
+        # IN 데이터 저장
+        for kk in range(num_sig_in):
+            stype = 'IN'
+            num = int(re_in['measno'][kk])
+            time = str(re_in['sttime'][kk])
+            time = (time.split(" "))[0] if " " in time else time
             
-            # OUT 데이터 저장
-            for kk in range(num_sig_out):
-                stype = 'OUT'
-                num = int(re_out['measno'][kk])
-                time = str(re_out['sttime'][kk])
-                time = (time.split(" "))[0] if " " in time else time
-                
-                out_x = PDB.get_meas_data(poleid, num, stype, 'x')
-                out_y = PDB.get_meas_data(poleid, num, stype, 'y')
-                out_z = PDB.get_meas_data(poleid, num, stype, 'z')
-                
-                if out_x is not None and not out_x.empty:
-                    filename = f"{poleid}_{kk+1}_{time}_OUT_x{break_info}.csv"
-                    out_x.to_csv(os.path.join(pole_dir, filename), index=False)
-                
-                if out_y is not None and not out_y.empty:
-                    filename = f"{poleid}_{kk+1}_{time}_OUT_y{break_info}.csv"
-                    out_y.to_csv(os.path.join(pole_dir, filename), index=False)
-                
-                if out_z is not None and not out_z.empty:
-                    filename = f"{poleid}_{kk+1}_{time}_OUT_z{break_info}.csv"
-                    out_z.to_csv(os.path.join(pole_dir, filename), index=False)
+            in_x = PDB.get_meas_data(poleid, num, stype, 'x')
+            if in_x is not None and not in_x.empty:
+                filename = f"{poleid}_{kk+1}_{time}_IN_x{break_info}.csv"
+                in_x.to_csv(os.path.join(pole_dir, filename), index=False)
         
-        # 각 measno별 측정 정보 수집 (항상 수행)
+        # OUT 데이터 저장
+        for kk in range(num_sig_out):
+            stype = 'OUT'
+            num = int(re_out['measno'][kk])
+            time = str(re_out['sttime'][kk])
+            time = (time.split(" "))[0] if " " in time else time
+            
+            out_x = PDB.get_meas_data(poleid, num, stype, 'x')
+            out_y = PDB.get_meas_data(poleid, num, stype, 'y')
+            out_z = PDB.get_meas_data(poleid, num, stype, 'z')
+            
+            if out_x is not None and not out_x.empty:
+                filename = f"{poleid}_{kk+1}_{time}_OUT_x{break_info}.csv"
+                out_x.to_csv(os.path.join(pole_dir, filename), index=False)
+            
+            if out_y is not None and not out_y.empty:
+                filename = f"{poleid}_{kk+1}_{time}_OUT_y{break_info}.csv"
+                out_y.to_csv(os.path.join(pole_dir, filename), index=False)
+            
+            if out_z is not None and not out_z.empty:
+                filename = f"{poleid}_{kk+1}_{time}_OUT_z{break_info}.csv"
+                out_z.to_csv(os.path.join(pole_dir, filename), index=False)
+        
+        # 각 measno별 측정 정보 수집
         measurements_info = {}
         
         # 안전하게 컬럼 값 가져오기 (대소문자 구분)
@@ -320,7 +323,7 @@ def save_pole_raw_data(server, project_name, poleid, anal_result, output_base_di
                 }
                 measurements_info[f'IN_{measno}'] = meas_info
         
-        # 정보를 별도 JSON 파일로 저장 (항상 저장/업데이트)
+        # 정보를 별도 JSON 파일로 저장
         if anal_result['breakstate'] == 'B':
             info_file = os.path.join(pole_dir, f"{poleid}_break_info.json")
             print(f"    [{poleid}] break_info.json 저장 중: {info_file}")
@@ -350,11 +353,8 @@ def save_pole_raw_data(server, project_name, poleid, anal_result, output_base_di
                 }, f, ensure_ascii=False, indent=2)
             print(f"    [{poleid}] normal_info.json 저장 완료")
         
-        # 데이터가 이미 존재했으면 None 반환, 새로 저장했으면 True 반환
-        if data_exists:
-            return None  # 이미 존재함을 의미
-        else:
-            return True
+        # 새로 저장했으므로 True 반환
+        return True
         
     except Exception as e:
         print(f"    [{poleid}] 원본 데이터 저장 오류: {e}")

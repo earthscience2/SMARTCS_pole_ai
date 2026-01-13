@@ -91,14 +91,8 @@ def edit_single_pole(pole_dir: Path):
             plt.title(f"{poleid} - 파단 위치 확인", fontsize=14, fontweight='bold', pad=20)
             plt.tight_layout()
             
-            # 이미지 표시 (비블로킹)
-            plt.show(block=False)
-            plt.pause(0.5)  # 이미지가 표시될 시간을 줌
-            
-            input("\n이미지를 확인하셨으면 엔터를 누르세요...")
-            
-            # 이미지 창 닫기
-            plt.close('all')
+            # 이미지 표시 (블로킹 - 창을 닫으면 진행)
+            plt.show(block=True)
         except Exception as e:
             print(f"  경고: 이미지 표시 중 오류 발생 - {e}")
             print(f"  이미지 경로: {img_file}")
@@ -186,11 +180,7 @@ def edit_single_pole(pole_dir: Path):
                             plt.title(f"{poleid} - 수정된 파단 위치 확인\n높이: {break_info.get('breakheight')}, 각도: {break_info.get('breakdegree')}", 
                                      fontsize=14, fontweight='bold', pad=20)
                             plt.tight_layout()
-                            plt.show(block=False)
-                            plt.pause(0.5)
-                            
-                            input("\n수정된 이미지를 확인하셨으면 엔터를 누르세요...")
-                            plt.close('all')
+                            plt.show(block=True)
                         except Exception as e:
                             print(f"  경고: 이미지 표시 중 오류 발생 - {e}")
                 except Exception as e:
@@ -295,14 +285,14 @@ def main():
     parser.add_argument(
         "--input-dir",
         type=str,
-        default="4.1 select_pole",
-        help="입력 디렉토리 (기본값: 4.1 select_pole)",
+        default="5. select_pole_data",
+        help="입력 디렉토리 (기본값: 5. select_pole_data)",
     )
     parser.add_argument(
         "--pole-dir",
         type=str,
         default=None,
-        help="단일 전주 디렉토리만 처리 (예: 4.1 select_pole/프로젝트/전주ID)",
+        help="단일 전주 디렉토리만 처리 (예: 5. select_pole_data/프로젝트/전주ID)",
     )
     
     args = parser.parse_args()

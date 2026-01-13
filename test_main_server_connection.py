@@ -29,7 +29,7 @@ def test_server_connection(server_name):
     
     # 서버별 호스트 정보 출력 (JT 서버는 테스트 대상에서 제외)
     server_hosts = {
-        'main': '210.105.85.3',
+        'main': '210.105.85.3:3306',
         'is': 'smartpole-is.iptime.org:33306',
         'kh': 'smartpole-kh.iptime.org:33306',
     }

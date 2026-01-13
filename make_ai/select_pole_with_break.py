@@ -2,11 +2,11 @@
 # -*- coding: utf-8 -*-
 """
 break_info.json에서 파단 위치(breakheight, breakdegree)가 포함된 CSV 파일만 선택하여
-4.1 select_pole 디렉토리로 복사
+5. select_pole_data 디렉토리로 복사
 
 각 전주 폴더에서:
 - break_info.json의 breakheight와 breakdegree 값이 CSV 파일에 포함되어 있는 파일만 선택
-- 선택된 CSV 파일과 break_info.json을 4.1 select_pole 디렉토리로 복사 (디렉토리 구조 유지)
+- 선택된 CSV 파일과 break_info.json을 5. select_pole_data 디렉토리로 복사 (디렉토리 구조 유지)
 """
 
 import os
@@ -122,7 +122,7 @@ def process_pole_directory(pole_dir: Path, output_base_dir: Path) -> Tuple[int, 
     
     Args:
         pole_dir: 전주 디렉토리 경로
-        output_base_dir: 출력 기본 디렉토리 (4.1 select_pole)
+        output_base_dir: 출력 기본 디렉토리 (5. select_pole_data)
     
     Returns:
         tuple: (복사된 파일 수, 스킵된 파일 수)
@@ -176,7 +176,7 @@ def process_pole_directory(pole_dir: Path, output_base_dir: Path) -> Tuple[int, 
 
 def process_all_poles(
     input_dir: str = "4. edit_pole_data/break",
-    output_dir: str = "4.1 select_pole"
+    output_dir: str = "5. select_pole_data"
 ):
     """
     모든 전주 디렉토리를 처리하여 파단 위치가 포함된 CSV 파일만 선택하여 복사.
@@ -256,8 +256,8 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="4.1 select_pole",
-        help="출력 디렉토리 (기본값: 4.1 select_pole)",
+        default="5. select_pole_data",
+        help="출력 디렉토리 (기본값: 5. select_pole_data)",
     )
     
     args = parser.parse_args()

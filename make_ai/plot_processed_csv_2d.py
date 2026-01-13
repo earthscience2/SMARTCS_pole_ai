@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-make_ai/4.1 select_pole 디렉토리의 모든 *_processed.csv 파일에 대해 2차원 그래프 생성
+make_ai/5. select_pole_data 디렉토리의 모든 *_processed.csv 파일에 대해 2차원 그래프 생성
 
 각 CSV 파일에 대해:
 - 높이와 각도에 따른 x, y, z 값 등고선 그래프 (3개)
@@ -270,8 +270,8 @@ def main():
     parser.add_argument(
         "--input-dir",
         type=str,
-        default="4.1 select_pole",
-        help="입력 디렉토리 (기본값: 4.1 select_pole)",
+        default="5. select_pole_data",
+        help="입력 디렉토리 (기본값: 5. select_pole_data)",
     )
     parser.add_argument(
         "--output-dir",
