@@ -1,26 +1,37 @@
-2026-01-13 00:09:31,092 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
-2026-01-13 00:09:31,094 INFO - select now()
-2026-01-13 00:09:31,212 INFO - [DB] ping success
-2026-01-13 00:09:31,732 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
-2026-01-13 00:09:31,732 INFO - select now()
-2026-01-13 00:09:31,812 INFO - [DB] ping success
-2026-01-13 00:09:32,268 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
-2026-01-13 00:09:32,268 INFO - select now()
-2026-01-13 00:09:32,467 INFO - [DB] ping success
-2026-01-13 00:09:48,999 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
-2026-01-13 00:12:39,063 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
-2026-01-13 00:13:43,933 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
-2026-01-13 00:21:05,968 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
-2026-01-13 00:21:06,327 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
-2026-01-13 00:22:01,545 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
-2026-01-13 00:22:01,902 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
-2026-01-13 00:22:29,797 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
-2026-01-13 00:22:30,061 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
-2026-01-13 00:23:15,685 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
-2026-01-13 01:34:12,134 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
-2026-01-13 01:36:26,013 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
-2026-01-13 01:54:37,977 ERROR - Failed to connect to database: (2003, "Can't connect to MySQL server on 'smartpole-is.iptime.org' ([Errno 8] nodename nor servname provided, or not known)")
-2026-01-13 01:54:39,313 ERROR - Failed to connect to database: (2003, "Can't connect to MySQL server on 'smartpole-kh.iptime.org' ([Errno 8] nodename nor servname provided, or not known)")
-2026-01-13 01:54:39,361 ERROR - Failed to connect to database: (2003, "Can't connect to MySQL server on '210.105.85.3' ([Errno 51] Network is unreachable)")
-2026-01-13 01:54:40,318 ERROR - Failed to connect to database: (2003, "Can't connect to MySQL server on 'smartpole-is.iptime.org' ([Errno 8] nodename nor servname provided, or not known)")
-2026-01-13 01:54:41,784 ERROR - Failed to connect to database: (2003, "Can't connect to MySQL server on 'smartpole-kh.iptime.org' ([Errno 8] nodename nor servname provided, or not known)")
+2026-01-15 17:52:37,211 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-15 17:52:53,856 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-15 17:54:33,361 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-15 20:59:14,378 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 21:00:48,358 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-15 21:01:17,337 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-01-15 21:01:41,446 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 21:03:48,275 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 21:04:55,220 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 21:06:45,430 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 21:07:45,550 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 21:08:35,888 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 21:10:16,322 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-15 21:10:40,548 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 21:13:18,540 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 21:14:57,012 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-15 21:15:24,023 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-01-15 21:16:25,600 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 21:16:25,643 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 21:23:58,734 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 21:41:36,983 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 21:47:31,226 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 22:00:42,748 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 22:03:21,352 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 22:15:24,911 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-15 22:37:07,805 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 22:47:51,676 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 22:51:18,863 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 22:53:48,171 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 22:55:25,825 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 22:55:44,257 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-15 22:55:53,957 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-01-15 22:55:55,509 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 22:59:42,608 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-01-15 23:00:00,784 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-01-15 23:00:10,334 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-01-15 23:00:12,033 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306

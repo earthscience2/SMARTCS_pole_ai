@@ -1,0 +1,83 @@
+{
+  "model_info": {
+    "model_type": "resnet_1d_multi_output",
+    "sequence_length": null,
+    "n_features": null,
+    "optimal_threshold": 0.5
+  },
+  "test_data": {
+    "num_samples": 1515,
+    "class_distribution": {
+      "normal": 1377,
+      "break": 138
+    }
+  },
+  "classification": {
+    "accuracy": 0.9425742574257425,
+    "precision": 0.6888888888888889,
+    "recall": 0.6739130434782609,
+    "f1_score": 0.6813186813186813,
+    "auc": 0.9225000789365665,
+    "confusion_matrix": [
+      [
+        1335,
+        42
+      ],
+      [
+        45,
+        93
+      ]
+    ],
+    "classification_report": {
+      "0": {
+        "precision": 0.967391304347826,
+        "recall": 0.9694989106753813,
+        "f1-score": 0.9684439608269858,
+        "support": 1377.0
+      },
+      "1": {
+        "precision": 0.6888888888888889,
+        "recall": 0.6739130434782609,
+        "f1-score": 0.6813186813186813,
+        "support": 138.0
+      },
+      "accuracy": 0.9425742574257425,
+      "macro avg": {
+        "precision": 0.8281400966183574,
+        "recall": 0.8217059770768211,
+        "f1-score": 0.8248813210728336,
+        "support": 1515.0
+      },
+      "weighted avg": {
+        "precision": 0.9420227674941407,
+        "recall": 0.9425742574257425,
+        "f1-score": 0.9422899749707837,
+        "support": 1515.0
+      }
+    }
+  },
+  "regression": {
+    "mae": 0.16373386200239926,
+    "mse": 0.03886243839178107,
+    "rmse": 0.197135583778731,
+    "mae_height": 0.16805013822875736,
+    "mae_degree": 0.15941758577604115,
+    "mse_height": 0.040035537922658515,
+    "mse_degree": 0.0376893388609036,
+    "num_samples": 138
+  },
+  "predictions": {
+    "y_pred_proba_mean": 0.10008392482995987,
+    "y_pred_proba_std": 0.22763200104236603
+  },
+  "regression_predictions": {
+    "height_min": 0.11513370275497437,
+    "height_max": 0.6171033978462219,
+    "height_mean": 0.3714536726474762,
+    "height_std": 0.06931255012750626,
+    "degree_min": -0.14768101274967194,
+    "degree_max": 0.7504173517227173,
+    "degree_mean": 0.4558931887149811,
+    "degree_std": 0.14282359182834625
+  }
+}

@@ -8,6 +8,9 @@ import sys
 import os
 import json
 from datetime import datetime
+from tqdm import tqdm
+from contextlib import contextmanager
+from io import StringIO
 
 # 프로젝트 루트 경로를 sys.path에 추가
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -23,6 +26,17 @@ SERVERS = {
     "is": "이수서버",
     "kh": "건화서버",
 }
+
+@contextmanager
+def suppress_stdout():
+    """표준 출력을 임시로 억제하는 컨텍스트 매니저"""
+    with open(os.devnull, 'w', encoding='utf-8') as devnull:
+        old_stdout = sys.stdout
+        sys.stdout = devnull
+        try:
+            yield
+        finally:
+            sys.stdout = old_stdout
 
 def get_anal2_completed_count(project_name):
     """
@@ -52,7 +66,8 @@ def get_anal2_completed_count(project_name):
         """
         
         data = [project_name]
-        result = PDB.poledb_conn.do_select_pd(query, data)
+        with suppress_stdout():
+            result = PDB.poledb_conn.do_select_pd(query, data)
         
         if result is None or result.empty:
             return 0
@@ -75,8 +90,9 @@ def get_project_statistics(server, project_name):
         dict: 프로젝트 통계 정보
     """
     try:
-        # 전체 전주 목록 조회
-        all_poles = PDB.get_pole_list_a(project_name)
+        # 전체 전주 목록 조회 (출력 억제)
+        with suppress_stdout():
+            all_poles = PDB.get_pole_list_a(project_name)
         total_poles = len(all_poles) if all_poles is not None and not all_poles.empty else 0
         
         if total_poles == 0:
@@ -86,7 +102,9 @@ def get_project_statistics(server, project_name):
         diag_progress = None
         if hasattr(PDB, 'group_diag_progress_info'):
             try:
-                diag_progress = PDB.group_diag_progress_info(project_name)
+                # 출력 억제
+                with suppress_stdout():
+                    diag_progress = PDB.group_diag_progress_info(project_name)
             except Exception as e:
                 print(f"    경고: group_diag_progress_info 호출 실패: {e}")
                 diag_progress = None
@@ -98,7 +116,9 @@ def get_project_statistics(server, project_name):
         anal_progress = None
         if hasattr(PDB, 'group_anal_progress_info'):
             try:
-                anal_progress = PDB.group_anal_progress_info(project_name)
+                # 출력 억제
+                with suppress_stdout():
+                    anal_progress = PDB.group_anal_progress_info(project_name)
             except Exception as e:
                 print(f"    경고: group_anal_progress_info 호출 실패: {e}")
                 anal_progress = None
@@ -106,8 +126,9 @@ def get_project_statistics(server, project_name):
         if anal_progress is None:
             anal_progress = {"total": total_poles, "anal1": 0, "anal2": 0, "none": total_poles}
         
-        # 2차 분석 완료 전주 수 직접 조회 (DB 쿼리로)
-        anal2_count = get_anal2_completed_count(project_name)
+        # 2차 분석 완료 전주 수 직접 조회 (DB 쿼리로, 출력 억제)
+        with suppress_stdout():
+            anal2_count = get_anal2_completed_count(project_name)
         
         # 기존 anal_progress에 실제 조회한 값으로 업데이트
         anal_progress["anal2"] = anal2_count
@@ -141,8 +162,9 @@ def get_project_list_from_server(server):
         print(f"\n[{SERVERS[server]}] 연결 중...")
         PDB.poledb_init(server)
         
-        # 프로젝트 목록 조회
-        project_list = PDB.groupname_info()
+        # 프로젝트 목록 조회 (출력 억제)
+        with suppress_stdout():
+            project_list = PDB.groupname_info()
         
         if project_list is None:
             print(f"[{SERVERS[server]}] 프로젝트 목록 조회 실패")
@@ -152,14 +174,27 @@ def get_project_list_from_server(server):
         print(f"[{SERVERS[server]}] 각 프로젝트의 통계 정보 조회 중...")
         
         projects_with_stats = []
-        for i, project_name in enumerate(project_list, 1):
-            print(f"  [{i}/{len(project_list)}] {project_name} 통계 조회 중...", end=" ")
+        # tqdm 진행 바 사용
+        total_projects = len(project_list)
+        pbar = tqdm(
+            total=total_projects,
+            desc=f"  [{SERVERS[server]}] 프로젝트 처리",
+            unit="프로젝트",
+            leave=False,
+            bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]',
+            ncols=100,
+            dynamic_ncols=False
+        )
+        
+        for project_name in project_list:
+            # 프로젝트 통계 정보 조회 (전체 함수 출력 억제)
+            with suppress_stdout():
+                stats = get_project_statistics(server, project_name)
             
-            # 프로젝트 통계 정보 조회
-            stats = get_project_statistics(server, project_name)
+            # 진행 바 업데이트 (출력 억제 후)
+            pbar.update(1)
             
             if stats is None:
-                print("통계 정보 없음")
                 # 통계 정보가 없어도 프로젝트는 포함
                 project_info = {
                     "project_name": project_name,
@@ -177,9 +212,11 @@ def get_project_list_from_server(server):
                     "project_name": project_name,
                     "statistics": stats
                 }
-                print(f"완료 (전체: {stats['total_poles']}개, 2차분석: {stats['anal2_ratio']}%)")
             
             projects_with_stats.append(project_info)
+        
+        # 진행 바 종료
+        pbar.close()
         
         print(f"[{SERVERS[server]}] 통계 정보 조회 완료: {len(projects_with_stats)}개")
         return projects_with_stats
@@ -240,7 +277,7 @@ def save_all_servers_project_list():
     all_projects = {}
     summary = {}
     
-    for server in SERVERS.keys():
+    for server in tqdm(SERVERS.keys(), desc="서버 처리", unit="서버", leave=True):
         project_list = get_project_list_from_server(server)
         
         if project_list:
@@ -307,15 +344,14 @@ def save_all_servers_project_list():
     return all_filename
 
 if __name__ == "__main__":
-    print("=" * 50)
+    print("=" * 60)
     print("프로젝트 목록 조회 및 저장 시작")
-    print("전체 프로젝트 조회 (통계 정보 포함)")
-    print("=" * 50)
+    print("=" * 60)
     
     # 모든 서버에서 프로젝트 목록 조회 및 저장
     save_all_servers_project_list()
     
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 60)
     print("프로젝트 목록 조회 및 저장 완료")
-    print("=" * 50)
+    print("=" * 60)
 

@@ -378,14 +378,14 @@ def get_all_servers_anal2_poles():
     return None
 
 if __name__ == "__main__":
-    print("=" * 50)
+    print("=" * 60)
     print("2차 분석 완료 전주 ID 조회 및 저장 시작")
-    print("=" * 50)
+    print("=" * 60)
     
     # 모든 서버에서 2차 분석 완료 전주 조회 및 저장
     get_all_servers_anal2_poles()
     
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 60)
     print("2차 분석 완료 전주 ID 조회 및 저장 완료")
-    print("=" * 50)
+    print("=" * 60)
 

@@ -1,5 +1,13 @@
 import os
+import sys
 from tqdm import tqdm
+
+# 프로젝트 루트 디렉토리를 PYTHONPATH에 추가하여 config 모듈을 찾을 수 있도록 설정
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from config import poledb as PDB  
 
 global in_num
@@ -49,16 +57,15 @@ def conf_file_open(dir):
     if Pole_list.empty:
         print(dir ,  " 데이터가 없습니다.")
     else:
-        main_path = 'raw_data/' + dir + " 원본데이터"
-        dir_path_csv = main_path + '/' + dir + ' csv'
-        dir_path_xlsx = main_path + '/' + dir + ' xlsx'
-        
-        if not os.path.exists(main_path):
-            os.mkdir(main_path)
-        if not os.path.exists(dir_path_csv):
-            os.mkdir(dir_path_csv)
-        if not os.path.exists(dir_path_xlsx):
-            os.mkdir(dir_path_xlsx)
+        # get_pole_date/raw_data 하위에 디렉토리 생성
+        base_raw_dir = os.path.join(current_dir, 'raw_data')
+        main_path = os.path.join(base_raw_dir, dir + " 원본데이터")
+        dir_path_csv = os.path.join(main_path, dir + ' csv')
+        dir_path_xlsx = os.path.join(main_path, dir + ' xlsx')
+
+        # 중간 디렉토리까지 한 번에 생성
+        os.makedirs(dir_path_csv, exist_ok=True)
+        os.makedirs(dir_path_xlsx, exist_ok=True)
             
         print(dir, " 원본 데이터 수집")
         for poleid in tqdm(Pole_list['poleid'], desc="Processing poles"):
@@ -89,8 +96,7 @@ def conf_file_open(dir):
 # main(메인서버), is(이수서버), kh(건화서버), jt(제이티엔지니어링)
 server = "is" 
 
-name_list = ["천안지사2-2511",
-             "아산지사2-2511"]
+name_list = ["충주지사-2512"]
 
 PDB.poledb_init(server)
 for i in name_list:

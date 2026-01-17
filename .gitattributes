@@ -1,0 +1,68 @@
+# 줄바꿈 문자 자동 변환 설정
+# Windows에서 CRLF로 체크아웃, 저장소에는 LF로 저장
+
+# 모든 텍스트 파일에 대해 자동 감지 및 변환
+* text=auto
+
+# Python 파일은 LF로 저장 (크로스 플랫폼 호환성)
+*.py text eol=lf
+*.pyw text eol=lf
+
+# Jupyter Notebook은 LF로 저장
+*.ipynb text eol=lf
+
+# 설정 파일들은 LF로 저장
+*.ini text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.conf text eol=lf
+*.cfg text eol=lf
+
+# Shell 스크립트는 LF로 저장
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Git 관련 파일
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# 문서 파일
+*.md text eol=lf
+*.txt text eol=lf
+*.rst text eol=lf
+
+# 기타 텍스트 파일
+*.log text eol=lf
+*.csv text eol=lf
+*.tsv text eol=lf
+
+# 바이너리 파일은 변환하지 않음
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tar.gz binary
+*.rar binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+
+# 모델 파일 및 데이터 파일
+*.keras binary
+*.h5 binary
+*.pkl binary
+*.model binary
+*.npy binary
+*.npz binary
+
+# 기타 바이너리 형식
+*.xlsx binary
+*.xls binary
+*.doc binary
+*.docx binary
