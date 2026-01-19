@@ -92,24 +92,33 @@ def load_sequence_data(
     X = np.load(sequences_path)
     y = np.load(labels_path)
     
-    # 파단 위치 데이터 로드
-    positions = None
-    if positions_path and os.path.exists(positions_path):
-        positions = np.load(positions_path)
-        print(f"  파단 위치 형태: {positions.shape}")
-    
+    # 메타데이터 먼저 로드
     metadata = {}
     if metadata_path and os.path.exists(metadata_path):
         with open(metadata_path, 'r', encoding='utf-8') as f:
             metadata = json.load(f)
+    
+    # 파단 위치 또는 윈도우 위치 데이터 로드
+    positions = None
+    if positions_path and os.path.exists(positions_path):
+        positions = np.load(positions_path)
+        print(f"  위치 데이터 형태: {positions.shape}")
+        # window_positions인 경우 메타데이터에서 확인
+        if metadata.get('data_type') == 'sliding_window':
+            print(f"  윈도우 위치 데이터 (center_height, center_degree)")
+        else:
+            print(f"  파단 위치 데이터 (break_height, break_degree)")
     
     print(f"데이터 로드 완료:")
     print(f"  데이터 형태: {X.shape}")
     print(f"  라벨 형태: {y.shape}")
     print(f"  클래스 분포: {np.bincount(y.astype(int))}")
     
+    # 데이터 타입 확인
+    data_type = metadata.get('data_type', 'unknown')
+    
     # 2D 그리드 데이터인지 확인
-    is_2d_grid = metadata.get('data_type') == '2d_grid' or len(X.shape) == 4
+    is_2d_grid = data_type == '2d_grid' or len(X.shape) == 4
     if is_2d_grid:
         print(f"  데이터 타입: 2D 그리드 (height × degree × features)")
         if 'grid_shape' in metadata:
@@ -120,6 +129,14 @@ def load_sequence_data(
             batch_size, height_bins, degree_bins, n_features = X.shape
             X = X.reshape(batch_size, height_bins * degree_bins, n_features)
             print(f"  1D로 변환: {X.shape} (height*degree를 시퀀스 길이로 사용)")
+    elif data_type == 'sliding_window':
+        # 슬라이딩 윈도우 방식
+        print(f"  데이터 타입: 슬라이딩 윈도우 (1D 시퀀스)")
+        print(f"    시퀀스 길이: {metadata.get('sequence_length', X.shape[1] if len(X.shape) >= 2 else 'N/A')}")
+        print(f"    윈도우 크기: 높이 {metadata.get('window_height', 'N/A')}m, 각도 {metadata.get('window_degree', 'N/A')}°")
+        print(f"    스트라이드: 높이 {metadata.get('stride_height', 'N/A')}m, 각도 {metadata.get('stride_degree', 'N/A')}°")
+        print(f"    크롭 마진: 높이 ±{metadata.get('crop_height_margin', 'N/A')}m, 각도 ±{metadata.get('crop_degree_margin', 'N/A')}°")
+        print(f"    라벨 의미: 1=파단 위치 포함 윈도우, 0=파단 위치 미포함 윈도우")
     else:
         print(f"  데이터 타입: 1D 시퀀스")
         # 슬라이딩 윈도우 사용 여부 확인
@@ -338,6 +355,8 @@ def focal_loss_with_false_negative_penalty(class_weight: dict, alpha: float = 0.
     Focal Loss + False Negative 페널티가 적용된 loss 함수.
     False Negative (파단을 정상으로 오분류)에 더 큰 페널티를 부여하여 Recall을 높임.
     
+    목표: Recall >= 95% (FN <= 5%), Precision >= 50%
+    
     Args:
         class_weight: 클래스 가중치 딕셔너리
         alpha: 클래스 균형 가중치 (0~1)
@@ -412,19 +431,33 @@ def find_optimal_threshold(
         recall = recall[:-1]
     
     if prioritize_recall:
-        # 재현율이 0.7 이상인 임계값 중에서 F1 스코어가 가장 높은 것 선택 (False Negative 감소)
-        # 0.8에서 0.7로 낮춰서 더 많은 후보 중에서 선택
-        valid_indices = recall >= 0.7
+        # 목표: Recall >= 95% (FN <= 5%), Precision >= 50%
+        # 재현율이 95% 이상이고 정밀도가 50% 이상인 임계값 중에서 F1 스코어가 가장 높은 것 선택
+        valid_indices = (recall >= 0.95) & (precision >= 0.50)
         if np.any(valid_indices):
             # F1 스코어 계산
             f1_scores = 2 * (precision[valid_indices] * recall[valid_indices]) / (precision[valid_indices] + recall[valid_indices] + 1e-10)
             best_idx = np.argmax(f1_scores)
             return thresholds[valid_indices][best_idx]
         else:
-            # 재현율 0.7 미만이면 F1 스코어 최대화
-            f1_scores = 2 * (precision * recall) / (precision + recall + 1e-10)
-            best_idx = np.argmax(f1_scores)
-            return thresholds[best_idx]
+            # 재현율 95% 이상인 임계값 중에서 정밀도를 고려하여 선택
+            valid_indices = recall >= 0.95
+            if np.any(valid_indices):
+                # 재현율 95% 이상 중에서 정밀도가 가장 높은 것 선택
+                best_idx = np.argmax(precision[valid_indices])
+                return thresholds[valid_indices][best_idx]
+            else:
+                # 재현율 90% 이상인 임계값 중에서 F1 스코어 최대화
+                valid_indices = recall >= 0.90
+                if np.any(valid_indices):
+                    f1_scores = 2 * (precision[valid_indices] * recall[valid_indices]) / (precision[valid_indices] + recall[valid_indices] + 1e-10)
+                    best_idx = np.argmax(f1_scores)
+                    return thresholds[valid_indices][best_idx]
+                else:
+                    # 재현율이 낮으면 F1 스코어 최대화
+                    f1_scores = 2 * (precision * recall) / (precision + recall + 1e-10)
+                    best_idx = np.argmax(f1_scores)
+                    return thresholds[best_idx]
     else:
         # F1 스코어 최대화
         f1_scores = 2 * (precision * recall) / (precision + recall + 1e-10)
@@ -507,23 +540,22 @@ def train_model(
     optimizer = Adam(learning_rate=learning_rate)
     
     # False Negative를 줄이기 위한 Focal Loss + False Negative 페널티 사용
+    # 목표: Recall >= 95% (FN <= 5%), Precision >= 50%, Accuracy >= 90%
     classification_loss = 'binary_crossentropy'
     if class_weight and positions_train is not None:
         # 다중 출력 모델: Focal Loss + False Negative 페널티 적용
-        # 종합 분석 결과: 1618, 1636 모델이 가장 균형잡힌 성능 (Recall 0.804, FN=27)
-        # 2234 모델은 Recall이 낮아서 (0.630, FN=51) 개선 필요
-        # 2123 모델은 과도한 파단 예측 (모든 것을 파단으로 예측)
-        # 최적 설정: fn_penalty=3.0 (1618, 1636과 유사), alpha=0.30 (균형 유지)
+        # Recall 95% 목표를 위해 FN 페널티를 더 강화 (3.0 -> 5.0)
+        # Precision 50% 유지를 위해 alpha를 적절히 조정 (0.30 -> 0.35)
         classification_loss = focal_loss_with_false_negative_penalty(
             class_weight, 
-            alpha=0.30,  # 클래스 균형 가중치 (1618, 1636 모델과 유사한 균형)
+            alpha=0.35,  # 0.30 -> 0.35: 파단 클래스에 더 집중하여 Precision 향상
             gamma=2.5,   # 어려운 샘플에 집중 (유지)
-            fn_penalty=3.0  # False Negative에 3.0배 페널티 (1618, 1636 모델과 유사한 수준)
+            fn_penalty=5.0  # 3.0 -> 5.0: False Negative에 더 큰 페널티 (Recall 95% 목표)
         )
-        print(f"  Focal Loss + False Negative 페널티 사용 (최적 균형)")
-        print(f"    - Focal Loss (gamma=2.5): 어려운 샘플에 적절히 집중")
-        print(f"    - False Negative 페널티 (3.0배): 파단을 정상으로 오분류 시 페널티 (1618, 1636 모델과 유사)")
-        print(f"    - Alpha (0.30): 파단 클래스에 적절히 집중 (균형 유지)")
+        print(f"  Focal Loss + False Negative 페널티 사용 (Recall >= 95%, Precision >= 50% 목표)")
+        print(f"    - Focal Loss (gamma=2.5): 어려운 샘플에 집중")
+        print(f"    - False Negative 페널티 (5.0배): 파단을 정상으로 오분류 시 큰 페널티 (Recall 95% 목표)")
+        print(f"    - Alpha (0.35): 파단 클래스에 집중하여 Precision 50% 유지")
     
     # 파단 위치 데이터가 있는 경우 회귀 loss 포함
     if positions_train is not None:
@@ -597,17 +629,19 @@ def train_model(
         print(f"  회귀 헤드: 128->96->64->32->2 (Dropout 감소로 위치 예측 다양성 및 정밀도 향상)")
     else:
         # 파단 위치 데이터가 없는 경우 분류만
+        # 목표: Recall >= 95% (FN <= 5%), Precision >= 50%, Accuracy >= 90%
         if class_weight:
             # False Negative를 줄이기 위한 Focal Loss + False Negative 페널티 사용
             classification_loss = focal_loss_with_false_negative_penalty(
                 class_weight,
-                alpha=0.30,  # 파단 클래스에 적절히 집중 (최적 균형)
-                gamma=2.5,   # 어려운 샘플에 적절히 집중
-                fn_penalty=3.0  # False Negative에 3.0배 페널티 (1618, 1636 모델과 유사)
+                alpha=0.35,  # 0.30 -> 0.35: 파단 클래스에 더 집중하여 Precision 향상
+                gamma=2.5,   # 어려운 샘플에 집중 (유지)
+                fn_penalty=5.0  # 3.0 -> 5.0: False Negative에 더 큰 페널티 (Recall 95% 목표)
             )
-            print(f"  Focal Loss + False Negative 페널티 사용 (최적 균형)")
-            print(f"    - Focal Loss (gamma=2.5): 어려운 샘플에 적절히 집중")
-            print(f"    - False Negative 페널티 (3.0배): 파단을 정상으로 오분류 시 페널티 (1618, 1636 모델과 유사)")
+            print(f"  Focal Loss + False Negative 페널티 사용 (Recall >= 95%, Precision >= 50% 목표)")
+            print(f"    - Focal Loss (gamma=2.5): 어려운 샘플에 집중")
+            print(f"    - False Negative 페널티 (5.0배): 파단을 정상으로 오분류 시 큰 페널티 (Recall 95% 목표)")
+            print(f"    - Alpha (0.35): 파단 클래스에 집중하여 Precision 50% 유지")
         model.compile(
             optimizer=optimizer,
             loss={'classification': classification_loss},
@@ -633,43 +667,45 @@ def train_model(
     # False Negative를 줄이기 위해 val_classification_recall을 모니터링
     model_file = output_path / "break_pattern_resnet_best.keras"
     
-    # 종합 분석 결과: 1618, 1636 모델이 Accuracy 모니터링으로 좋은 성능 (Recall 0.804, FN=27)
-    # 2234 모델은 F1 Score 모니터링으로 Recall이 낮아짐 (0.630, FN=51)
-    # 최적 전략: Accuracy 모니터링 (1618, 1636 모델과 동일)으로 균형잡힌 성능 유지
+    # 목표: Recall >= 95% (FN <= 5%), Precision >= 50%, Accuracy >= 90%
+    # Recall을 우선적으로 보장하면서 Precision도 50% 이상 유지
+    # Recall을 모니터링하되, Precision도 함께 고려
     if positions_train is not None:
-        # Accuracy 모니터링으로 Precision과 Recall의 균형 유지 (1618, 1636 모델과 동일)
-        monitor_metric = 'val_classification_accuracy'  # Accuracy 모니터링 (균형잡힌 성능)
+        # Recall 모니터링으로 False Negative 최소화 (Recall >= 95% 목표)
+        # 하지만 Precision도 50% 이상 유지해야 하므로 Accuracy도 함께 고려
+        monitor_metric = 'val_classification_recall'  # Recall 모니터링 (FN <= 5% 목표)
         recall_monitor = 'val_classification_recall'
     else:
-        # 단일 출력 모델의 경우 Accuracy 모니터링
-        monitor_metric = 'val_accuracy'  # Accuracy 모니터링
+        # 단일 출력 모델의 경우 Recall 모니터링
+        monitor_metric = 'val_recall'  # Recall 모니터링 (FN <= 5% 목표)
         recall_monitor = 'val_recall'
     
     callbacks = [
         EarlyStopping(
-            monitor=monitor_metric,  # Accuracy 모니터링 (Precision과 Recall 균형)
-            mode='max',  # Accuracy는 높을수록 좋음
-            patience=20,  # patience 증가 (더 긴 학습 허용)
+            monitor=monitor_metric,  # Recall 모니터링 (FN <= 5% 목표)
+            mode='max',  # Recall은 높을수록 좋음
+            patience=25,  # 더 긴 학습 허용 (Recall 95% 목표 달성)
             restore_best_weights=True,
-            verbose=1
+            verbose=0  # 1 -> 0: 출력 최소화로 속도 향상
         ),
         ModelCheckpoint(
             str(model_file),
-            monitor=monitor_metric,  # Accuracy가 가장 높은 모델 저장 (균형잡힌 성능)
+            monitor=monitor_metric,  # Recall이 가장 높은 모델 저장 (FN <= 5% 목표)
             mode='max',
             save_best_only=True,
-            verbose=1
+            verbose=0  # 1 -> 0: 출력 최소화로 속도 향상
         ),
         ReduceLROnPlateau(
             monitor='val_loss',  # Learning rate는 여전히 loss로 조정
-            factor=0.5,
-            patience=7,  # patience 증가
-            min_lr=1e-8,  # 최소 학습률 감소
-            verbose=1
+            factor=0.3,  # 0.5 -> 0.3: 더 적극적인 학습률 감소
+            patience=5,  # 7 -> 5: 더 빠른 학습률 조정
+            min_lr=1e-7,  # 1e-8 -> 1e-7: 최소 학습률 상향
+            verbose=0  # 1 -> 0: 출력 최소화로 속도 향상
         ),
     ]
-    print(f"  EarlyStopping 및 ModelCheckpoint: {monitor_metric} 모니터링 (1618, 1636 모델과 동일한 전략)")
-    print(f"  학습률 스케줄링: patience={7}, min_lr={1e-8}")
+    print(f"  EarlyStopping 및 ModelCheckpoint: {monitor_metric} 모니터링 (Recall >= 95% 목표)")
+    print(f"  학습률 스케줄링: factor=0.3, patience=5, min_lr=1e-7 (더 적극적인 학습률 감소)")
+    print(f"  목표 성능: Accuracy >= 90%, Recall >= 95% (FN <= 5%), Precision >= 50%")
     
     # 모델 학습
     print(f"\n모델 학습 시작...")
@@ -705,6 +741,9 @@ def train_model(
         # 단일 출력 모델: class_weight 사용 가능
         class_weight_dict = {'classification': class_weight}
     
+    # 학습 속도 향상을 위해 verbose 모드 조정
+    # verbose=1: 진행 표시줄 (기본)
+    # verbose=2: 에폭당 한 줄 (더 빠름)
     history = model.fit(
         X_train, y_train_dict,
         validation_data=(X_val, y_val_dict),
@@ -712,7 +751,7 @@ def train_model(
         epochs=epochs,
         callbacks=callbacks,
         class_weight=class_weight_dict,
-        verbose=1
+        verbose=2  # 1 -> 2: 에폭당 한 줄만 출력하여 속도 향상
     )
     
     # 학습 종료 시간 기록
@@ -724,8 +763,8 @@ def train_model(
     # 최적 모델 로드
     model.load_weights(str(model_file))
     
-    # 검증 성능 평가
-    predictions = model.predict(X_val, verbose=0)
+    # 검증 성능 평가 (verbose=0으로 출력 최소화)
+    predictions = model.predict(X_val, verbose=0, batch_size=batch_size * 2)  # 배치 크기 증가로 속도 향상
     
     # 다중 출력 모델: [분류 출력, 회귀 출력]
     if isinstance(predictions, list):
@@ -735,15 +774,13 @@ def train_model(
         y_pred_proba = predictions.ravel()
         y_pred_positions = None
     
-    # 최적 임계값 찾기 (1618, 1636 모델과 유사한 전략)
-    # 1618 모델: 임계값 0.057 (낮음), Recall 0.804, FN=27
-    # 1636 모델: 임계값 0.147 (중간), Recall 0.804, FN=27
-    # 최적 전략: Recall 우선하되, Precision도 고려 (0.7 이상 Recall 중 F1 최대화)
+    # 최적 임계값 찾기
+    # 목표: Recall >= 95% (FN <= 5%), Precision >= 50%, Accuracy >= 90%
     threshold = 0.5
     if optimal_threshold:
-        # Recall 우선하되, Precision도 고려하는 균형잡힌 임계값 선택
+        # Recall >= 95%, Precision >= 50%를 만족하는 임계값 선택
         threshold = find_optimal_threshold(y_val, y_pred_proba, prioritize_recall=True)
-        print(f"\n최적 임계값: {threshold:.4f} (기본값: 0.5, Recall 우선으로 False Negative 감소, 1618, 1636 모델과 유사)")
+        print(f"\n최적 임계값: {threshold:.4f} (목표: Recall >= 95%, Precision >= 50%)")
     
     y_pred = (y_pred_proba >= threshold).astype(int)
     
@@ -1344,20 +1381,27 @@ def main():
     metadata_path = "5. train_data/break_sequences_metadata.json"
     test_sequences = "5. train_data/test/break_sequences_test.npy"
     test_labels = "5. train_data/test/break_labels_test.npy"
-    positions = "5. train_data/train/break_positions_train.npy"
-    test_positions = "5. train_data/test/break_positions_test.npy"
-    regression_weight = 1.0  # 회귀 loss 가중치 (실제 가중치는 이 값의 3배 = 3.0, 파단 위치 예측 정확도 향상)
+    # window_positions 또는 break_positions (슬라이딩 윈도우 모드에서는 window_positions 사용)
+    # 먼저 window_positions 시도
+    positions = "5. train_data/train/window_positions_train.npy"
+    test_positions = "5. train_data/test/window_positions_test.npy"
+    # window_positions가 없으면 break_positions 시도
+    positions_full_path = os.path.join(current_dir, positions)
+    if not os.path.exists(positions_full_path):
+        positions = "5. train_data/train/break_positions_train.npy"
+        test_positions = "5. train_data/test/break_positions_test.npy"
+    regression_weight = 1.0  # 회귀 loss 가중치 (실제 가중치는 이 값의 7배 = 7.0, 파단 위치 예측 정확도 향상)
     use_train_test_split = False
     output_dir = "6. models"
-    num_filters = 64
-    num_blocks = 3
+    num_filters = 128  # 64 -> 128: 모델 용량 증가로 표현력 향상
+    num_blocks = 4  # 3 -> 4: 더 깊은 네트워크로 복잡한 패턴 학습
     blocks_per_layer = 2
     kernel_size = 7
-    dropout = 0.3
-    learning_rate = 0.001
-    batch_size = 32
-    epochs = 100
-    regularizer = 1e-5  # L2 정규화 추가 (과적합 방지 및 정확도 향상)
+    dropout = 0.4  # 0.3 -> 0.4: 과적합 방지 강화 (회귀 오차가 큰 것 방지)
+    learning_rate = 0.0005  # 0.001 -> 0.0005: 더 안정적인 학습
+    batch_size = 128  # 64 -> 128: 배치 크기 증가로 학습 속도 향상 (약 2배 빠름)
+    epochs = 150  # 100 -> 150: 더 긴 학습 허용
+    regularizer = 1e-4  # 1e-5 -> 1e-4: 정규화 강화로 과적합 방지
     test_size = 0.2
     random_state = 42
     use_class_weight = True

@@ -20,6 +20,12 @@
 - 파단 위치 주변의 공간적 패턴을 더 잘 학습 가능
 - height와 degree의 관계를 명확하게 표현
 - 파단 위치 예측 정확도 향상
+
+슬라이딩 윈도우 방식 (새로운 기능):
+- 파단 위치 주변 크롭 후 슬라이딩 윈도우로 여러 샘플 생성
+- 윈도우 크기: 0.4m 높이, 40도 범위
+- 스트라이드: 0.1m, 5도
+- 각 윈도우가 파단 위치를 포함하는지 여부를 라벨로 사용
 """
 
 import os
@@ -31,6 +37,7 @@ import pandas as pd
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from scipy.interpolate import interp1d, griddata
+from sklearn.preprocessing import RobustScaler
 
 # 현재 스크립트 디렉토리
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -701,23 +708,683 @@ def process_cropped_data(
     print(f"  파단 샘플 비율: {len(break_samples)/len(sequences)*100:.2f}%")
 
 
-def main():
-    print("=" * 60)
-    print("2D 그리드 학습 데이터 준비 시작")
-    print("=" * 60)
+def crop_around_break_location(
+    df: pd.DataFrame,
+    break_height: float,
+    break_degree: Optional[float],
+    crop_height_margin: float = 0.3,
+    crop_degree_margin: float = 45.0
+) -> Optional[pd.DataFrame]:
+    """
+    파단 위치 주변으로 데이터 크롭.
     
-    process_cropped_data(
-        merge_data_dir="4. merge_data",
-        normal_data_dir="4. merge_data/normal",
-        output_dir="5. train_data",
-        height_bins=50,   # 높이 축 50개 구간
-        degree_bins=72,   # 각도 축 72개 구간 (5도 간격)
-        min_points=50,
+    Args:
+        df: 원본 DataFrame
+        break_height: 파단 높이
+        break_degree: 파단 각도 (None 가능)
+        crop_height_margin: 높이 마진 (기본: 0.3m)
+        crop_degree_margin: 각도 마진 (기본: 45도)
+    
+    Returns:
+        크롭된 DataFrame 또는 None
+    """
+    if df.empty or 'height' not in df.columns:
+        return None
+    
+    # 높이 범위 크롭
+    h_min = break_height - crop_height_margin
+    h_max = break_height + crop_height_margin
+    
+    cropped_df = df[(df['height'] >= h_min) & (df['height'] <= h_max)].copy()
+    
+    if cropped_df.empty:
+        return None
+    
+    # 각도 범위 크롭 (break_degree가 있는 경우)
+    if break_degree is not None and 'degree' in df.columns:
+        d_min = break_degree - crop_degree_margin
+        d_max = break_degree + crop_degree_margin
+        
+        # 각도 wrap-around 처리 (0~360도)
+        if d_min < 0:
+            cropped_df = cropped_df[
+                (cropped_df['degree'] >= (360 + d_min)) | (cropped_df['degree'] <= d_max)
+            ]
+        elif d_max > 360:
+            cropped_df = cropped_df[
+                (cropped_df['degree'] >= d_min) | (cropped_df['degree'] <= (d_max - 360))
+            ]
+        else:
+            cropped_df = cropped_df[
+                (cropped_df['degree'] >= d_min) & (cropped_df['degree'] <= d_max)
+            ]
+    
+    return cropped_df if not cropped_df.empty else None
+
+
+def check_window_contains_break(
+    height_start: float,
+    height_end: float,
+    degree_start: float,
+    degree_end: float,
+    break_height: float,
+    break_degree: Optional[float],
+    height_margin: float = 0.1,
+    degree_margin: float = 10.0
+) -> bool:
+    """
+    윈도우가 파단 위치를 포함하는지 확인.
+    
+    Args:
+        height_start, height_end: 윈도우 높이 범위
+        degree_start, degree_end: 윈도우 각도 범위
+        break_height: 파단 높이
+        break_degree: 파단 각도 (None 가능)
+        height_margin: 높이 마진 (기본: 0.1m)
+        degree_margin: 각도 마진 (기본: 10도)
+    
+    Returns:
+        bool: 파단 위치를 포함하면 True
+    """
+    # 높이 범위 확인
+    height_overlap = (height_start <= break_height + height_margin) and \
+                     (height_end >= break_height - height_margin)
+    
+    if not height_overlap:
+        return False
+    
+    # 각도 범위 확인 (break_degree가 있는 경우)
+    if break_degree is not None:
+        # 각도 마진 적용: 파단 위치 ± 마진 범위 계산
+        degree_min = break_degree - degree_margin
+        degree_max = break_degree + degree_margin
+        
+        # 각도 wrap-around 처리 (0~360도)
+        def normalize_degree(deg):
+            """각도를 0~360도 범위로 정규화"""
+            while deg < 0:
+                deg += 360
+            while deg >= 360:
+                deg -= 360
+            return deg
+        
+        degree_min_norm = normalize_degree(degree_min)
+        degree_max_norm = normalize_degree(degree_max)
+        
+        # 윈도우 각도 범위 정규화
+        degree_start_norm = normalize_degree(degree_start)
+        degree_end_norm = normalize_degree(degree_end)
+        
+        # 파단 위치(마진 포함)와 윈도우 범위가 겹치는지 확인
+        if degree_start_norm <= degree_end_norm:
+            # 일반적인 경우 (0도를 넘지 않음)
+            # 윈도우 범위와 파단 위치(마진 포함) 범위가 겹치는지 확인
+            degree_contained = not (
+                (degree_max_norm < degree_start_norm) or (degree_min_norm > degree_end_norm)
+            )
+        else:
+            # 윈도우가 0도를 넘어가는 경우 (예: 350~10도)
+            # 파단 위치(마진 포함)가 윈도우 범위 안에 있는지 확인
+            degree_contained = (
+                (degree_min_norm >= degree_start_norm or degree_min_norm <= degree_end_norm) or
+                (degree_max_norm >= degree_start_norm or degree_max_norm <= degree_end_norm) or
+                (degree_min_norm <= degree_end_norm and degree_max_norm >= degree_start_norm)
+            )
+        return degree_contained
+    
+    return True
+
+
+def create_sliding_windows_from_cropped_data(
+    df: pd.DataFrame,
+    break_height: float,
+    break_degree: Optional[float],
+    window_height: float = 0.4,
+    window_degree: float = 40.0,
+    stride_height: float = 0.1,
+    stride_degree: float = 5.0,
+    sequence_length: int = 50,
+    sort_by: str = 'height'
+) -> List[Tuple[np.ndarray, Dict, int]]:
+    """
+    크롭된 데이터에서 슬라이딩 윈도우 방식으로 시퀀스 생성.
+    
+    Args:
+        df: 크롭된 DataFrame
+        break_height: 파단 높이
+        break_degree: 파단 각도 (None 가능)
+        window_height: 윈도우 높이 범위 (기본: 0.4m)
+        window_degree: 윈도우 각도 범위 (기본: 40도)
+        stride_height: 높이 스트라이드 (기본: 0.1m)
+        stride_degree: 각도 스트라이드 (기본: 5도)
+        sequence_length: 시퀀스 길이 (기본: 50)
+        sort_by: 정렬 기준 ('height' 또는 'degree')
+    
+    Returns:
+        [(시퀀스, 메타데이터, 라벨), ...] 리스트
+    """
+    if df.empty:
+        return []
+    
+    required_cols = ['height', 'degree', 'x_value', 'y_value', 'z_value']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        return []
+    
+    sequences = []
+    h_min, h_max = df['height'].min(), df['height'].max()
+    d_min, d_max = df['degree'].min(), df['degree'].max()
+    
+    # 윈도우 생성
+    h_starts = np.arange(h_min, h_max - window_height + stride_height, stride_height)
+    
+    # 각도 슬라이딩
+    degree_range = d_max - d_min
+    if degree_range <= window_degree:
+        d_starts = [d_min]
+    else:
+        d_starts = np.arange(d_min, d_max - window_degree + stride_degree, stride_degree)
+    
+    # 전체 데이터로 scaler fit
+    scaler = RobustScaler()
+    features_all = df[['x_value', 'y_value', 'z_value']].values
+    scaler.fit(features_all)
+    
+    for h_start in h_starts:
+        h_end = h_start + window_height
+        for d_start in d_starts:
+            d_end = d_start + window_degree
+            
+            # 윈도우 내 데이터 필터링
+            window_df = df[
+                (df['height'] >= h_start) & (df['height'] <= h_end) &
+                (df['degree'] >= d_start) & (df['degree'] <= d_end)
+            ].copy()
+            
+            if len(window_df) < 5:  # 최소 포인트 수
+                continue
+            
+            # 정렬
+            if sort_by == 'height':
+                window_df = window_df.sort_values(['height', 'degree']).reset_index(drop=True)
+            elif sort_by == 'degree':
+                window_df = window_df.sort_values(['degree', 'height']).reset_index(drop=True)
+            
+            # 피처 선택 및 정규화
+            features = window_df[['x_value', 'y_value', 'z_value']].values
+            features = scaler.transform(features)
+            
+            # 시퀀스 길이 맞추기
+            n_points = len(features)
+            if n_points < sequence_length:
+                # 패딩
+                padding = np.tile(features[-1:], (sequence_length - n_points, 1))
+                sequence = np.vstack([features, padding])
+            elif n_points > sequence_length:
+                # 균등 샘플링
+                indices = np.linspace(0, n_points - 1, sequence_length, dtype=int)
+                sequence = features[indices]
+            else:
+                sequence = features
+            
+            # 라벨 결정: 윈도우가 파단 위치를 포함하는지 확인
+            label = 1 if check_window_contains_break(
+                h_start, h_end, d_start, d_end,
+                break_height, break_degree
+            ) else 0
+            
+            metadata = {
+                'height_start': float(h_start),
+                'height_end': float(h_end),
+                'degree_start': float(d_start),
+                'degree_end': float(d_end),
+                'center_height': float((h_start + h_end) / 2),
+                'center_degree': float((d_start + d_end) / 2),
+                'num_points': int(len(window_df)),
+                'break_height': float(break_height),
+                'break_degree': float(break_degree) if break_degree is not None else None
+            }
+            
+            sequences.append((sequence, metadata, label))
+    
+    return sequences
+
+
+def process_sliding_window_data(
+    merge_data_dir: str = "4. merge_data",
+    normal_data_dir: str = "4. merge_data/normal",
+    output_dir: str = "5. train_data",
+    window_height: float = 0.4,
+    window_degree: float = 40.0,
+    stride_height: float = 0.1,
+    stride_degree: float = 5.0,
+    sequence_length: int = 50,
+    crop_height_margin: Optional[float] = None,
+    crop_degree_margin: Optional[float] = None,
+    min_points: int = 5
+):
+    """
+    파단 위치 주변 크롭 후 슬라이딩 윈도우 방식으로 학습 데이터 생성.
+    
+    Args:
+        merge_data_dir: merge_data 디렉토리 경로 (파단 데이터)
+        normal_data_dir: 정상 데이터 디렉토리
+        output_dir: 출력 디렉토리
+        window_height: 윈도우 높이 범위 (기본: 0.4m)
+        window_degree: 윈도우 각도 범위 (기본: 40도)
+        stride_height: 높이 스트라이드 (기본: 0.1m)
+        stride_degree: 각도 스트라이드 (기본: 5도)
+        sequence_length: 시퀀스 길이 (기본: 50)
+        crop_height_margin: 크롭 높이 마진 (None이면 window_height와 동일)
+        crop_degree_margin: 크롭 각도 마진 (None이면 window_degree와 동일)
+        min_points: 최소 데이터 포인트 수
+    """
+    # 크롭 마진이 지정되지 않으면 윈도우 크기와 동일하게 설정
+    if crop_height_margin is None:
+        crop_height_margin = window_height
+    if crop_degree_margin is None:
+        crop_degree_margin = window_degree
+    
+    # 출력 디렉토리 생성
+    output_path = Path(current_dir) / output_dir
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    # 파단 데이터 파일 수집
+    print("파단 데이터 파일 수집 중...")
+    crop_files = collect_all_crop_files(merge_data_dir)
+    
+    # 정상 데이터 파일 수집
+    normal_files = []
+    if normal_data_dir:
+        print(f"\n정상 데이터 파일 수집 중...")
+        normal_files = collect_normal_data_files(normal_data_dir)
+    
+    if not crop_files:
+        print("처리할 파단 파일을 찾을 수 없습니다.")
+        return
+    
+    print(f"\n총 {len(crop_files)}개의 파단 파일 발견")
+    print(f"윈도우 크기: 높이 {window_height}m, 각도 {window_degree}°")
+    print(f"스트라이드: 높이 {stride_height}m, 각도 {stride_degree}°")
+    print(f"크롭 마진: 높이 ±{crop_height_margin}m, 각도 ±{crop_degree_margin}° (윈도우 크기와 동일)")
+    
+    # 시퀀스 데이터 처리
+    sequences = []
+    labels = []
+    window_positions = []  # 윈도우 중심 위치 정보
+    metadata_list = []
+    failed_files = []
+    
+    # 파단 데이터 처리
+    if crop_files:
+        print(f"\n파단 데이터 슬라이딩 윈도우 생성 중...")
+        for csv_path, project_name, poleid, pole_dir, label in tqdm(crop_files, desc="파단 데이터 처리"):
+            # break_info.json 로드
+            csv_file_path = Path(csv_path)
+            csv_filename = csv_file_path.name
+            break_info = load_break_info_json(pole_dir, csv_filename=csv_filename)
+            
+            if not break_info or break_info.get('breakstate') != 'B':
+                failed_files.append({
+                    'csv_path': csv_path,
+                    'project_name': project_name,
+                    'poleid': poleid,
+                    'reason': 'break_info.json 없음 또는 breakstate != B'
+                })
+                continue
+            
+            break_height = break_info.get('breakheight')
+            break_degree = break_info.get('breakdegree')
+            
+            if break_height is None:
+                failed_files.append({
+                    'csv_path': csv_path,
+                    'project_name': project_name,
+                    'poleid': poleid,
+                    'reason': 'breakheight 없음'
+                })
+                continue
+            
+            try:
+                break_height = float(break_height)
+                if break_height >= 2.0:  # 2m 이상 제외
+                    failed_files.append({
+                        'csv_path': csv_path,
+                        'project_name': project_name,
+                        'poleid': poleid,
+                        'reason': f'breakheight >= 2.0 ({break_height})'
+                    })
+                    continue
+                
+                if break_degree is not None:
+                    break_degree = float(break_degree)
+            except (ValueError, TypeError):
+                failed_files.append({
+                    'csv_path': csv_path,
+                    'project_name': project_name,
+                    'poleid': poleid,
+                    'reason': 'breakheight/breakdegree 변환 실패'
+                })
+                continue
+            
+            # CSV 파일 로드
+            df = load_crop_csv(csv_path)
+            if df is None or df.empty:
+                failed_files.append({
+                    'csv_path': csv_path,
+                    'project_name': project_name,
+                    'poleid': poleid,
+                    'reason': 'CSV 로드 실패'
+                })
+                continue
+            
+            # 파단 위치 주변 크롭
+            cropped_df = crop_around_break_location(
+                df, break_height, break_degree,
+                crop_height_margin=crop_height_margin,
+                crop_degree_margin=crop_degree_margin
+            )
+            
+            if cropped_df is None or len(cropped_df) < min_points:
+                failed_files.append({
+                    'csv_path': csv_path,
+                    'project_name': project_name,
+                    'poleid': poleid,
+                    'reason': f'크롭 후 데이터 포인트 부족 ({len(cropped_df) if cropped_df is not None else 0} < {min_points})'
+                })
+                continue
+            
+            # 슬라이딩 윈도우 생성
+            window_sequences = create_sliding_windows_from_cropped_data(
+                cropped_df,
+                break_height,
+                break_degree,
+                window_height=window_height,
+                window_degree=window_degree,
+                stride_height=stride_height,
+                stride_degree=stride_degree,
+                sequence_length=sequence_length,
+                sort_by='height'
+            )
+            
+            if not window_sequences:
+                failed_files.append({
+                    'csv_path': csv_path,
+                    'project_name': project_name,
+                    'poleid': poleid,
+                    'reason': '윈도우 생성 실패'
+                })
+                continue
+            
+            # 윈도우 시퀀스 추가
+            for sequence, metadata, window_label in window_sequences:
+                sequences.append(sequence)
+                labels.append(window_label)  # 윈도우가 파단 위치를 포함하면 1, 아니면 0
+                window_positions.append([metadata['center_height'], metadata['center_degree']])
+                
+                metadata['csv_path'] = csv_path
+                metadata['project_name'] = project_name
+                metadata['poleid'] = poleid
+                metadata_list.append(metadata)
+    
+    # 정상 데이터 처리 (간단한 샘플링)
+    if normal_files:
+        print(f"\n정상 데이터 샘플링 중...")
+        # 파단 샘플 수의 10배까지
+        max_normal_samples = len([l for l in labels if l == 1]) * 10
+        current_normal_samples = len([l for l in labels if l == 0])
+        
+        for csv_path, project_name, poleid, label in tqdm(normal_files, desc="정상 데이터 처리"):
+            if current_normal_samples >= max_normal_samples:
+                break
+            
+            # CSV 파일 로드
+            df = load_crop_csv(csv_path)
+            if df is None or df.empty or len(df) < min_points:
+                continue
+            
+            # 정상 데이터는 랜덤하게 일부 윈도우만 생성
+            # 높이 범위를 여러 구간으로 나눠서 샘플링
+            h_min, h_max = df['height'].min(), df['height'].max()
+            d_min, d_max = df['degree'].min(), df['degree'].max()
+            
+            # 랜덤하게 몇 개의 윈도우 생성
+            num_windows = min(3, max_normal_samples - current_normal_samples)  # 파일당 최대 3개
+            
+            for _ in range(num_windows):
+                # 랜덤 높이/각도 선택
+                h_center = np.random.uniform(h_min + window_height/2, h_max - window_height/2)
+                d_center = np.random.uniform(d_min + window_degree/2, d_max - window_degree/2)
+                
+                h_start = h_center - window_height / 2
+                h_end = h_center + window_height / 2
+                d_start = d_center - window_degree / 2
+                d_end = d_center + window_degree / 2
+                
+                # 윈도우 내 데이터 필터링
+                window_df = df[
+                    (df['height'] >= h_start) & (df['height'] <= h_end) &
+                    (df['degree'] >= d_start) & (df['degree'] <= d_end)
+                ].copy()
+                
+                if len(window_df) < min_points:
+                    continue
+                
+                # 정렬 및 시퀀스 생성
+                window_df = window_df.sort_values(['height', 'degree']).reset_index(drop=True)
+                features = window_df[['x_value', 'y_value', 'z_value']].values
+                
+                scaler = RobustScaler()
+                features = scaler.fit_transform(features)
+                
+                # 시퀀스 길이 맞추기
+                n_points = len(features)
+                if n_points < sequence_length:
+                    padding = np.tile(features[-1:], (sequence_length - n_points, 1))
+                    sequence = np.vstack([features, padding])
+                elif n_points > sequence_length:
+                    indices = np.linspace(0, n_points - 1, sequence_length, dtype=int)
+                    sequence = features[indices]
+                else:
+                    sequence = features
+                
+                sequences.append(sequence)
+                labels.append(0)  # 정상 데이터는 항상 라벨 0
+                window_positions.append([float(h_center), float(d_center)])
+                
+                metadata = {
+                    'height_start': float(h_start),
+                    'height_end': float(h_end),
+                    'degree_start': float(d_start),
+                    'degree_end': float(d_end),
+                    'center_height': float(h_center),
+                    'center_degree': float(d_center),
+                    'num_points': int(len(window_df)),
+                    'csv_path': csv_path,
+                    'project_name': project_name,
+                    'poleid': poleid,
+                    'break_height': None,
+                    'break_degree': None
+                }
+                metadata_list.append(metadata)
+                current_normal_samples += 1
+    
+    if not sequences:
+        print("생성된 시퀀스 데이터가 없습니다.")
+        return
+    
+    # 배열로 변환
+    X = np.array(sequences)
+    y = np.array(labels)
+    window_positions_array = np.array(window_positions)
+    
+    print(f"\n슬라이딩 윈도우 데이터 생성 완료:")
+    print(f"  총 샘플 수: {len(X)}")
+    print(f"  시퀀스 형태: {X.shape} (samples, sequence_length, features)")
+    print(f"  파단 포함 윈도우: {len([l for l in labels if l == 1])}개")
+    print(f"  파단 미포함 윈도우: {len([l for l in labels if l == 0])}개")
+    print(f"  실패한 파일: {len(failed_files)}개")
+    
+    # 학습/테스트 데이터 분할 (7:3 비율)
+    indices = np.arange(len(X))
+    X_train, X_test, y_train, y_test, train_indices, test_indices = train_test_split(
+        X, y, indices,
+        test_size=0.3,
+        random_state=42,
+        stratify=y
     )
     
-    print("\n" + "=" * 60)
-    print("2D 그리드 데이터 준비 완료")
-    print("=" * 60)
+    # 윈도우 위치 정보도 동일한 인덱스로 분할
+    wp_train = window_positions_array[train_indices]
+    wp_test = window_positions_array[test_indices]
+    
+    print(f"\n데이터 분할 (학습:테스트 = 7:3 비율):")
+    print(f"  학습 샘플 수: {len(X_train)}개")
+    print(f"  테스트 샘플 수: {len(X_test)}개")
+    
+    # 저장 디렉토리 구성
+    train_dir = output_path / "train"
+    test_dir = output_path / "test"
+    train_dir.mkdir(parents=True, exist_ok=True)
+    test_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 학습/테스트 데이터 저장
+    np.save(train_dir / "break_sequences_train.npy", X_train)
+    np.save(train_dir / "break_labels_train.npy", y_train)
+    np.save(train_dir / "window_positions_train.npy", wp_train)
+    
+    np.save(test_dir / "break_sequences_test.npy", X_test)
+    np.save(test_dir / "break_labels_test.npy", y_test)
+    np.save(test_dir / "window_positions_test.npy", wp_test)
+    
+    # 전체 데이터도 저장
+    sequences_file = output_path / "break_sequences.npy"
+    labels_file = output_path / "break_labels.npy"
+    window_positions_file = output_path / "window_positions.npy"
+    metadata_file = output_path / "break_sequences_metadata.json"
+    
+    np.save(sequences_file, X)
+    np.save(labels_file, y)
+    np.save(window_positions_file, window_positions_array)
+    
+    # 메타데이터 저장
+    metadata_dict = {
+        'total_samples': len(metadata_list),
+        'data_type': 'sliding_window',
+        'sequence_length': sequence_length,
+        'window_height': window_height,
+        'window_degree': window_degree,
+        'stride_height': stride_height,
+        'stride_degree': stride_degree,
+        'crop_height_margin': crop_height_margin,
+        'crop_degree_margin': crop_degree_margin,
+        'feature_names': ['x_value', 'y_value', 'z_value'],
+        'sort_by': 'height',
+        'min_points': min_points,
+        'samples': metadata_list,
+        'failed_files': failed_files,
+        'data_shape': list(X.shape),
+        'window_positions_shape': list(window_positions_array.shape),
+    }
+    
+    with open(metadata_file, 'w', encoding='utf-8') as f:
+        json.dump(metadata_dict, f, ensure_ascii=False, indent=2)
+    
+    print(f"\n데이터 저장 완료:")
+    print(f"  학습 시퀀스: {train_dir / 'break_sequences_train.npy'}")
+    print(f"  학습 라벨: {train_dir / 'break_labels_train.npy'}")
+    print(f"  학습 윈도우 위치: {train_dir / 'window_positions_train.npy'}")
+    print(f"  테스트 시퀀스: {test_dir / 'break_sequences_test.npy'}")
+    print(f"  테스트 라벨: {test_dir / 'break_labels_test.npy'}")
+    print(f"  테스트 윈도우 위치: {test_dir / 'window_positions_test.npy'}")
+    print(f"  메타데이터: {metadata_file}")
+
+
+def main():
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description="학습 데이터 준비 (2D 그리드 또는 슬라이딩 윈도우 방식)"
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="sliding_window",
+        choices=['grid', 'sliding_window'],
+        help="데이터 생성 모드 (기본값: sliding_window)"
+    )
+    parser.add_argument(
+        "--window-height",
+        type=float,
+        default=0.4,
+        help="윈도우 높이 범위 (슬라이딩 윈도우 모드, 기본값: 0.4m)"
+    )
+    parser.add_argument(
+        "--window-degree",
+        type=float,
+        default=40.0,
+        help="윈도우 각도 범위 (슬라이딩 윈도우 모드, 기본값: 40도)"
+    )
+    parser.add_argument(
+        "--stride-height",
+        type=float,
+        default=0.1,
+        help="높이 스트라이드 (슬라이딩 윈도우 모드, 기본값: 0.1m)"
+    )
+    parser.add_argument(
+        "--stride-degree",
+        type=float,
+        default=5.0,
+        help="각도 스트라이드 (슬라이딩 윈도우 모드, 기본값: 5도)"
+    )
+    parser.add_argument(
+        "--sequence-length",
+        type=int,
+        default=50,
+        help="시퀀스 길이 (슬라이딩 윈도우 모드, 기본값: 50)"
+    )
+    
+    args = parser.parse_args()
+    
+    if args.mode == 'sliding_window':
+        print("=" * 60)
+        print("슬라이딩 윈도우 학습 데이터 준비 시작")
+        print("=" * 60)
+        
+        process_sliding_window_data(
+            merge_data_dir="4. merge_data",
+            normal_data_dir="4. merge_data/normal",
+            output_dir="5. train_data",
+            window_height=args.window_height,
+            window_degree=args.window_degree,
+            stride_height=args.stride_height,
+            stride_degree=args.stride_degree,
+            sequence_length=args.sequence_length,
+            crop_height_margin=None,  # None이면 window_height와 동일
+            crop_degree_margin=None,  # None이면 window_degree와 동일
+            min_points=5
+        )
+        
+        print("\n" + "=" * 60)
+        print("슬라이딩 윈도우 데이터 준비 완료")
+        print("=" * 60)
+    else:
+        print("=" * 60)
+        print("2D 그리드 학습 데이터 준비 시작")
+        print("=" * 60)
+        
+        process_cropped_data(
+            merge_data_dir="4. merge_data",
+            normal_data_dir="4. merge_data/normal",
+            output_dir="5. train_data",
+            height_bins=50,
+            degree_bins=72,
+            min_points=50,
+        )
+        
+        print("\n" + "=" * 60)
+        print("2D 그리드 데이터 준비 완료")
+        print("=" * 60)
 
 
 if __name__ == "__main__":
