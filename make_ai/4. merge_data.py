@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-3. raw_pole_data의 모든 OUT 파일들을 x, y, z로 병합하고
-각도와 위치(height, degree) 관계로 데이터를 생성하는 스크립트.
-
-각 measno별로 개별 파일로 저장 (머지하지 않음)
-출력 형식: height,degree,x_value,y_value,z_value,devicetype
-"""
+"""3. raw_pole_data의 OUT 파일들을 x, y, z로 병합·보간하여 통일된 데이터로 생성"""
 
 import os
 import json
 import glob
+import random
 import sys
 from pathlib import Path
 
@@ -530,29 +525,18 @@ def process_out_files_for_measno(pole_dir, measno, meas_info, output_dir):
     # devicetype 추가
     output_df['devicetype'] = 'OUT'
     
-    # 정렬
+    # 정렬 (height, degree 순)
     output_df = output_df.sort_values(['height', 'degree']).reset_index(drop=True)
     
     # 필요한 컬럼만 선택
     output_df = output_df[['height', 'degree', 'x_value', 'y_value', 'z_value', 'devicetype']].copy()
     
-    # 오프셋 적용: 각 파일의 중앙값을 기준으로 변화량 계산
-    # 파단 검출에서 중요한 것은 절대값이 아니라 변화량이므로
-    # 각 파일의 x, y, z 값에서 해당 파일의 중앙값을 빼서 상대값으로 변환
-    for col in ['x_value', 'y_value', 'z_value']:
-        # 결측치를 제외하고 중앙값 계산
-        valid_values = output_df[col].dropna()
-        if not valid_values.empty:
-            median_value = valid_values.median()
-            # 중앙값을 빼서 변화량(상대값)으로 변환
-            output_df[col] = output_df[col] - median_value
-    
-    # 모든 값이 0.0이거나 NaN인 행 제거
-    # x_value, y_value, z_value가 모두 0.0이거나 모두 NaN인 행 필터링
+    # 원본 보간된 값을 그대로 사용 (차분 계산하지 않음)
+    # 모든 값이 NaN인 행 제거
     mask = ~(
-        (output_df['x_value'].fillna(0.0) == 0.0) & 
-        (output_df['y_value'].fillna(0.0) == 0.0) & 
-        (output_df['z_value'].fillna(0.0) == 0.0)
+        output_df['x_value'].isna() & 
+        output_df['y_value'].isna() & 
+        output_df['z_value'].isna()
     )
     output_df = output_df[mask].copy()
     
@@ -717,6 +701,9 @@ def process_pole_directory(pole_dir, output_dir):
         
         created_csv_files = valid_csv_files
         processed_count = len(created_csv_files)
+    else:
+        # 정상 데이터: 생성된 CSV 개수만 반환 (이미지·파단 정보는 생성하지 않음)
+        processed_count = len(created_csv_files)
     
     # 파단 데이터이고 파일이 생성된 경우, 각 CSV 파일마다 별도의 break_info.json 저장 및 이미지 생성
     # 정상 데이터는 정보 파일을 저장하지 않음
@@ -775,8 +762,9 @@ def process_all_raw_pole_data(
     output_base_dir: str = "4. edit_pole_data",
 ):
     """
-    raw_pole_data 디렉토리 아래의 모든 파일 처리
-    break와 normal 데이터를 각각 별도 폴더로 저장
+    raw_pole_data 디렉토리 아래의 파단(break) 데이터를 머지하여 저장하고,
+    정상(normal) 데이터는 이미지·파단 정보 없이 CSV만 합성하여
+    파단 데이터 CSV 개수의 10배 수만 랜덤 샘플로 저장한다.
     
     Args:
         raw_data_base_dir: 원본 데이터 기본 디렉토리
@@ -788,57 +776,46 @@ def process_all_raw_pole_data(
         print(f"오류: 원본 데이터 디렉토리를 찾을 수 없습니다: {raw_data_base_dir}")
         return
     
-    # break와 normal 디렉토리 처리
-    for data_type in ['break', 'normal']:
+    total_break_processed = 0
+    
+    # 1) 파단(break) 머지
+    for data_type in ['break']:
         data_type_path = raw_data_path / data_type
         
         if not data_type_path.exists():
             continue
         
-        # 각 데이터 타입별로 별도 출력 디렉토리 생성
         output_path = Path(current_dir) / output_base_dir / data_type
         
-        print(f"\n{'='*60}")
-        print(f"[{data_type.upper()}] 처리 시작")
-        print(f"출력 디렉토리: {output_base_dir}/{data_type}")
-        print(f"{'='*60}")
+        print(f"\n[{data_type.upper()}] 처리 시작")
         
-        # 모든 프로젝트 디렉토리 찾기
         projects = [d for d in data_type_path.iterdir() if d.is_dir()]
-        
         if not projects:
             continue
         
         total_poles = 0
         total_processed = 0
-        total_projects = len(projects)
         
-        # 프로젝트 전체 진행률 표시
         project_pbar = tqdm(sorted(projects), desc=f"  [{data_type.upper()}] 프로젝트 처리", unit="프로젝트", leave=False)
         
         for project_idx, project_dir in enumerate(project_pbar, 1):
             project_name = project_dir.name
             project_pbar.set_postfix_str(f"{project_name}", refresh=False)
             
-            # 프로젝트 아래의 모든 전주 디렉토리 찾기
             pole_dirs = [d for d in project_dir.iterdir() if d.is_dir()]
             total_poles_in_project = len(pole_dirs)
             
-            # 프로젝트 단위 확인: 저장된 전주 수와 원본 전주 수 비교
             project_output_dir = output_path / project_name
             saved_pole_count = 0
             if project_output_dir.exists() and project_output_dir.is_dir():
-                # 처리된 전주 디렉토리 수 카운트 (CSV 파일이 있는 것만)
                 for pole_dir in project_output_dir.iterdir():
                     if pole_dir.is_dir():
                         csv_files = list(pole_dir.glob("*_OUT_processed.csv"))
                         if len(csv_files) > 0:
                             saved_pole_count += 1
             
-            # 저장된 전주 수와 원본 전주 수가 같으면 프로젝트 전체 건너뛰기
             if saved_pole_count > 0 and saved_pole_count == total_poles_in_project:
                 total_poles += total_poles_in_project
-                # 이미 처리된 파일 개수 계산 (각 전주당 OUT measno 개수)
                 for pole_dir in sorted(pole_dirs):
                     poleid = pole_dir.name
                     pole_output_dir = project_output_dir / poleid
@@ -849,7 +826,6 @@ def process_all_raw_pole_data(
             
             for pole_dir in sorted(pole_dirs):
                 total_poles += 1
-                
                 try:
                     processed_count = process_pole_directory(str(pole_dir), str(output_path))
                     if processed_count > 0:
@@ -858,18 +834,57 @@ def process_all_raw_pole_data(
                     continue
         
         project_pbar.close()
+        total_break_processed = total_processed
         
-        print(f"\n[{data_type.upper()}] 처리 완료")
-        print(f"  전체 전주 수: {total_poles}개")
-        print(f"  처리된 파일 수: {total_processed}개")
-        print(f"  출력 위치: {output_base_dir}/{data_type}")
+        print(f"\n[{data_type.upper()}] 완료: 전주 {total_poles}개, 파일 {total_processed}개")
     
-    print(f"\n{'='*60}")
-    print("전체 처리 완료")
-    print(f"출력 디렉토리:")
-    print(f"  - 파단 데이터: {output_base_dir}/break")
-    print(f"  - 정상 데이터: {output_base_dir}/normal")
-    print(f"{'='*60}")
+    # 2) 정상(normal) 합성: 이미지·파단 정보는 생성하지 않고, 파단 CSV 개수의 10배만 랜덤 샘플로 저장
+    normal_path = raw_data_path / "normal"
+    normal_output_path = Path(current_dir) / output_base_dir / "normal"
+    target_normal_count = 10 * total_break_processed
+    
+    if normal_path.exists() and target_normal_count > 0:
+        print(f"\n[NORMAL] 정상 데이터 합성 시작 (목표: {target_normal_count}개)")
+        
+        all_normal_pole_dirs = []
+        for project_dir in normal_path.iterdir():
+            if not project_dir.is_dir():
+                continue
+            for pole_dir in project_dir.iterdir():
+                if not pole_dir.is_dir():
+                    continue
+                info_file = pole_dir / f"{pole_dir.name}_normal_info.json"
+                if info_file.exists():
+                    all_normal_pole_dirs.append(pole_dir)
+        
+        random.shuffle(all_normal_pole_dirs)
+        normal_processed = 0
+        normal_pbar = tqdm(all_normal_pole_dirs, desc="  [NORMAL] 전주 처리", unit="전주", leave=False)
+        
+        for pole_dir in normal_pbar:
+            if normal_processed >= target_normal_count:
+                break
+            # 이미 있으면 건너뛰기: process_pole_directory와 동일한 경로 규칙 사용 (os.path.join)
+            project_name = pole_dir.parent.name
+            poleid = pole_dir.name
+            output_pole_dir = os.path.join(str(normal_output_path), project_name, poleid)
+            if os.path.exists(output_pole_dir):
+                existing_csvs = glob.glob(os.path.join(output_pole_dir, "*_OUT_processed.csv"))
+                if existing_csvs:
+                    normal_processed += len(existing_csvs)
+                    if normal_processed >= target_normal_count:
+                        break
+                    continue
+            try:
+                cnt = process_pole_directory(str(pole_dir), str(normal_output_path))
+                normal_processed += cnt
+            except Exception as e:
+                continue
+        
+        normal_pbar.close()
+        print(f"\n[NORMAL] 완료: {normal_processed}개 저장")
+    
+    print(f"\n전체 처리 완료: {output_base_dir}")
 
 
 if __name__ == "__main__":

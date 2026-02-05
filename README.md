@@ -51,6 +51,7 @@ SMARTCS/
 ├── logger.py                 # 로깅 모듈
 ├── slack.py                  # Slack 알림 모듈
 ├── maintime.py               # 시간 처리 모듈
+├── make_ai/                  # AI 모델 개발 및 학습 파이프라인
 ├── AUTO_analysis/            # 자동 분석 결과 저장 디렉토리
 ├── ai_data_set/              # AI 학습용 데이터셋
 ├── polelist/                 # 전주 목록 및 원본 데이터
@@ -131,6 +132,112 @@ poledb_pwd = 'your_password'
 ```
 
 또는 `pole.ini` 파일을 사용하여 설정할 수 있습니다.
+
+## 🤖 AI 모델 학습 파이프라인 (make_ai)
+
+`make_ai` 디렉토리는 전주 파단 감지를 위한 AI 모델 개발 파이프라인을 포함합니다. 데이터 수집부터 모델 학습, 평가까지 순차적으로 실행됩니다.
+
+### 데이터 준비 단계 (1~5)
+
+#### 1. get_project_info_list.py
+각 서버에서 프로젝트 목록을 조회하여 JSON 파일로 저장합니다.
+- **출력**: `1. project_info_list/project_list_all_*.json`
+
+#### 2. get_anal_pole_list.py
+각 프로젝트별로 1차 분석 이상 완료된 전주 ID를 조회하여 JSON 파일로 저장합니다.
+- **입력**: `1. project_info_list/project_list_all_*.json`
+- **출력**: `2. anal_pole_list/anal2_poles_all_*.json`
+
+#### 3. get_raw_pole_data.py
+anal2_poles_all JSON에서 전주 목록을 읽어 원본 측정 데이터를 조회·저장합니다.
+- **입력**: `2. anal_pole_list/anal2_poles_all_*.json`
+- **출력**: `3. raw_pole_data/break/`, `3. raw_pole_data/normal/`
+
+#### 3.1. check_raw_pole_data_info.py
+3. raw_pole_data 디렉토리의 정보를 확인하고 통계를 시각화합니다.
+
+#### 4. merge_data.py
+3. raw_pole_data의 OUT 파일들을 x, y, z로 병합·보간하여 통일된 데이터로 생성합니다.
+- **입력**: `3. raw_pole_data/break/`, `3. raw_pole_data/normal/`
+- **출력**: `4. merge_data/break/`, `4. merge_data/normal/`
+
+#### 4.1. check_merge_data_info.py
+4. merge_data 디렉토리의 병합 데이터 정보를 확인하고 통계를 시각화합니다.
+
+#### 5. edit_data.py
+이미지를 보면서 ROI(Region of Interest) 영역을 설정하는 GUI 프로그램입니다.
+- **출력**: `5. edit_data/break/` (roi_info.json 포함)
+
+### Light 모델 학습 단계 (6~8)
+
+#### 6. set_light_train_data.py
+시퀀스 학습 데이터를 준비합니다 (CSV → NPY). Light 모델용 학습/테스트 데이터를 생성합니다.
+- **입력**: `4. merge_data/`, `5. edit_data/`
+- **출력**: `6. light_train_data/<YYYYMMDD_HHMM>/train/`, `test/`
+
+#### 7. make_light_model.py
+Light ResNet(2D) 파단 패턴 학습 - 전주 파단/정상 분류 모델을 학습합니다.
+- **입력**: `6. light_train_data/<최신>/train/`, `test/`
+- **출력**: `7. light_models/<YYYYMMDD_HHMM>/checkpoints/best.keras`
+- **WSL2 실행**: `7. make_light_model_wsl2.sh` (GPU 사용)
+
+#### 8. evaluate_light_model.py
+Light 모델 상세 평가 - 테스트 데이터 기반 성능 평가 및 결과를 시각화합니다.
+- **출력**: `8. evaluate_light_model/<모델 run>/` (혼동행렬, ROC/PR 곡선, 평가 리포트)
+
+### Hard 모델 학습 단계 (9~13)
+
+#### 9. set_hard_train_data.py
+시퀀스 학습 데이터를 준비합니다 (CSV → NPY). Hard 모델용 bbox 포함 학습 데이터를 생성합니다.
+- **입력**: `4. merge_data/`, `5. edit_data/`
+- **출력**: `9. hard_train_data/<YYYYMMDD_HHMM>/train/`, `test/`
+
+#### 10. make_hard_model_1st.py
+Hard ResNet bbox 모델 1차 학습 - ROI별 파단 위치 bbox 예측 모델을 학습합니다 (x/y/z축).
+- **입력**: `9. hard_train_data/<최신>/train/`, `test/`
+- **출력**: `10. hard_models_1st/<YYYYMMDD_HHMM>/checkpoints/best_x.keras`, `best_y.keras`, `best_z.keras`
+- **WSL2 실행**: `10. make_hard_model_1st_wsl2.sh` (GPU 사용)
+
+#### 11. evaluate_hard_model_1st.py
+Hard 모델 1차 평가 - bbox 예측 정확도를 평가하고 IoU를 분석합니다 (x/y/z축).
+- **출력**: `11. evaluate_hard_model_1st/<timestamp>/` (IoU 히스토그램, 평가 메트릭)
+- **WSL2 실행**: `11. evaluate_hard_model_1st_wsl2.sh`
+
+#### 12. make_hard_model_2nd.py
+Hard ResNet 모델 2차 학습 - confidence head 추가 학습을 수행합니다 (x/y/z축).
+- **입력**: `10. hard_models_1st/<최신>/checkpoints/`
+- **출력**: `12. hard_models_2nd/<YYYYMMDD_HHMM>/checkpoints/conf_x.keras`, `conf_y.keras`, `conf_z.keras`
+- **WSL2 실행**: `12. make_hard_model_2nd_wsl2.sh` (GPU 사용)
+
+#### 13. evaluate_hard_model_2nd.py
+Hard 모델 2차 평가 - bbox + confidence 예측 성능을 평가하고 파단 위치를 시각화합니다.
+- **출력**: `13. evaluate_hard_model_2nd/<timestamp>/` (파단 위치 시각화, 평가 리포트)
+- **WSL2 실행**: `13. evaluate_hard_model_2nd_wsl2.sh`
+
+### 파이프라인 실행 순서
+
+```bash
+# 1. 데이터 수집
+python "make_ai/1. get_project_info_list.py"
+python "make_ai/2. get_anal_pole_list.py"
+python "make_ai/3. get_raw_pole_data.py"
+python "make_ai/4. merge_data.py"
+
+# 2. Light 모델 (파단/정상 분류)
+python "make_ai/6. set_light_train_data.py"
+bash "make_ai/7. make_light_model_wsl2.sh"  # 또는 python "make_ai/7. make_light_model.py" --local
+python "make_ai/8. evaluate_light_model.py"
+
+# 3. ROI 설정 (선택적)
+python "make_ai/5. edit_data.py"
+
+# 4. Hard 모델 (파단 위치 예측)
+python "make_ai/9. set_hard_train_data.py"
+bash "make_ai/10. make_hard_model_1st_wsl2.sh"
+bash "make_ai/11. evaluate_hard_model_1st_wsl2.sh"
+bash "make_ai/12. make_hard_model_2nd_wsl2.sh"
+bash "make_ai/13. evaluate_hard_model_2nd_wsl2.sh"
+```
 
 ## 📖 사용 방법
 

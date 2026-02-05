@@ -95,6 +95,9 @@ pylint>=2.6.0
 # 딥러닝 프레임워크
 # ============================================
 # TensorFlow (AI 모델 학습 시 필수 - Python 3.12 호환)
+# Windows에서는 CPU 버전 설치 후 수동으로 GPU 설정 필요
+# 설치: pip install tensorflow
+# GPU 사용을 원하면 CUDA/cuDNN을 별도로 설치해야 함
 tensorflow>=2.16.1,<3.0.0
 
 # Jupyter (개발 환경)
