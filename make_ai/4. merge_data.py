@@ -682,28 +682,8 @@ def process_pole_directory(pole_dir, output_dir):
         except Exception as e:
             continue
     
-    # 파단 데이터인 경우, 파단 위치를 포함하는 CSV 파일만 유지
-    if is_break_info and breakstate == 'B' and breakheight is not None and breakdegree is not None:
-        project_name = Path(pole_dir).parent.name
-        output_subdir = os.path.join(output_dir, project_name, poleid)
-        
-        # 생성된 CSV 파일들 중 파단 위치를 포함하는 것만 유지
-        valid_csv_files = []
-        for csv_file in created_csv_files:
-            if csv_contains_break_location(csv_file, breakheight, breakdegree):
-                valid_csv_files.append(csv_file)
-            else:
-                # 파단 위치를 포함하지 않는 CSV 파일 삭제
-                try:
-                    os.remove(csv_file)
-                except Exception:
-                    pass
-        
-        created_csv_files = valid_csv_files
-        processed_count = len(created_csv_files)
-    else:
-        # 정상 데이터: 생성된 CSV 개수만 반환 (이미지·파단 정보는 생성하지 않음)
-        processed_count = len(created_csv_files)
+    # 파단 위치 검증 없이 모든 생성된 CSV 파일 유지 (예측용)
+    processed_count = len(created_csv_files)
     
     # 파단 데이터이고 파일이 생성된 경우, 각 CSV 파일마다 별도의 break_info.json 저장 및 이미지 생성
     # 정상 데이터는 정보 파일을 저장하지 않음

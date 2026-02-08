@@ -27,6 +27,8 @@ log/
 
 # 원본 데이터
 get_pole_date/raw_data/
+make_ai/test_ai/query_pole_work/3. raw_pole_data/
+make_ai/test_ai/query_pole_work/4. merge_data/
 
 # 데이터 폴더 (대용량 데이터)
 # make_ai 데이터 폴더
@@ -34,6 +36,7 @@ make_ai/1. project_info_list/
 make_ai/2. anal_pole_list/
 make_ai/3. raw_pole_data/
 make_ai/4. merge_data/
+make_ai/4. merge_data_old/
 make_ai/5. edit_data/
 make_ai/6. light_train_data/
 make_ai/7. light_models/
@@ -89,6 +92,8 @@ mysqldb.py
 # 주의: make_ai/6. models/*/*.keras 와 make_ai/6. models/*/*.h5 는 이미 위에서 제외함
 *.pkl
 *.model
+*.keras
+*.h5
 
 # NumPy 배열 파일 (대용량 데이터)
 *.npy
@@ -104,7 +109,14 @@ htmlcov/
 *.orig
 *.rej
 
-
-*.keras
-*.h5
+# AI 모델 결과 폴더
 make_ai/hard_model_1st_best/
+make_ai/hard_model_2nd_best/
+make_ai/light_model_best/
+make_ai/test_ai/
+make_ai/weight_num/
+
+make_ai/weight_num/export_2nd_eval_to_excel/
+
+make_ai\test_ai\query_pole_work\3. raw_pole_data\
+make_ai\test_ai\query_pole_work\4. merge_data\

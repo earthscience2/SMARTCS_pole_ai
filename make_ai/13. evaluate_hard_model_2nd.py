@@ -1208,7 +1208,10 @@ def main():
         )
         if len(X) > 0:
             cache_dir.mkdir(parents=True, exist_ok=True)
+            # cache_key에 경로 구분자가 있을 수 있으므로 cache_npz의 부모 디렉터리도 생성
+            cache_npz.parent.mkdir(parents=True, exist_ok=True)
             np.savez_compressed(cache_npz, X=X)
+            cache_pkl.parent.mkdir(parents=True, exist_ok=True)
             with open(cache_pkl, "wb") as f:
                 pickle.dump((metas, csv_paths, labels), f)
             print("전처리 결과 저장:", cache_npz)
@@ -1696,7 +1699,7 @@ def main():
     def _fmt(v):
         return f"{v:.4f}" if v is not None and not (isinstance(v, float) and np.isnan(v)) else "N/A"
 
-    print("\n--- 평가 지표 (IoU–conf 연관성, F1, break/normal 분리) ---")
+    print("\n--- 평가 지표 (IoU-conf 연관성, F1, break/normal 분리) ---")
     print("축      Pearson r   Spearman ρ  AUC(IoU≥0.5)  best_F1   F1_thr   n_pairs  mean_conf(break) mean_conf(normal) separation")
     for ax in AXIS_NAMES:
         m = metrics["by_axis"][ax]

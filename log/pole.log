@@ -1,6 +1,199 @@
-2026-02-03 00:20:41,044 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
-2026-02-03 00:22:34,875 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
-2026-02-03 00:23:18,591 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
-2026-02-03 00:33:24,985 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
-2026-02-03 00:34:51,403 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
-2026-02-03 00:35:27,116 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-02-06 08:48:18,806 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 08:48:31,751 WARNING - 5 out of the last 8 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x00000201367D34C0> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 08:49:22,083 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 08:49:34,329 WARNING - 5 out of the last 8 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x000001B22802A520> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 08:50:33,049 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 08:50:47,980 WARNING - 5 out of the last 11 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x000001EEBD1B1B20> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 08:50:48,063 WARNING - 6 out of the last 12 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x000001EEBE8431A0> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 08:51:20,867 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 08:54:06,478 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 08:55:59,175 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 09:03:56,877 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 09:05:15,444 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 09:06:53,899 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 09:08:53,670 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 09:10:47,291 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 09:16:38,556 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 09:18:59,727 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 09:22:17,839 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 09:24:22,932 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 09:26:20,228 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-02-06 09:26:59,289 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-02-06 09:27:17,617 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 09:28:44,154 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-02-06 09:29:18,898 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-02-06 09:29:23,849 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 09:59:45,611 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-02-06 10:20:55,986 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-02-06 10:21:55,608 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 16:28:04,183 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 16:42:34,982 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 16:43:27,338 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 16:45:27,370 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 16:46:12,418 WARNING - 5 out of the last 11 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x00000261E826EF20> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 16:46:12,500 WARNING - 6 out of the last 12 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x0000026180161BC0> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 16:46:47,776 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 16:47:28,116 WARNING - 5 out of the last 12 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x000001E9D5714040> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 16:47:28,208 WARNING - 6 out of the last 13 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x000001E9D578F880> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 16:48:36,067 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 16:49:10,226 WARNING - 5 out of the last 11 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x000001FE09D81E40> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 16:49:10,318 WARNING - 6 out of the last 12 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x000001FE09AE2520> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 16:50:04,891 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 16:50:29,927 WARNING - 5 out of the last 8 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x00000197565FA980> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 16:50:50,450 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 16:58:14,799 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 16:58:15,442 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 16:58:41,280 WARNING - 5 out of the last 8 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x000002309B4065C0> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 16:58:41,383 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 16:58:43,422 WARNING - 6 out of the last 9 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x000002309DAC7740> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 16:58:59,622 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 16:59:26,363 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 16:59:46,129 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:00:05,582 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:00:25,567 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:00:45,853 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:01:05,699 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:01:25,319 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:01:45,002 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:02:04,618 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:02:24,628 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:02:44,733 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:03:16,703 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:03:39,004 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:04:02,149 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:04:25,559 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:04:47,683 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:05:08,929 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:05:32,507 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:05:58,906 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:06:19,140 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:14:55,200 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:17:22,958 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:17:23,578 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:17:49,354 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:18:07,590 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:18:33,253 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:18:52,525 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:19:11,161 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:19:30,314 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:19:49,788 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:20:09,714 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:20:29,813 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:20:49,871 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:21:12,115 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:21:32,668 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:21:53,054 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:22:23,452 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:22:44,076 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:23:05,656 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:23:27,964 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:23:48,510 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:24:08,468 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:24:31,939 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:24:56,071 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:25:17,555 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:25:40,649 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:26:02,183 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:26:22,721 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:26:44,674 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:27:06,600 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:27:25,920 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:27:47,085 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:28:08,113 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:28:28,247 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:31:14,472 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:31:39,315 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:31:59,719 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:32:19,668 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:32:39,468 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:32:59,208 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:33:24,219 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:33:48,102 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:34:10,479 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:34:32,622 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:34:55,772 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:35:17,686 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:35:40,540 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:36:01,744 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:36:23,176 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:36:47,221 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:36:47,941 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:37:17,003 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:37:36,681 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:37:57,330 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:38:15,710 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:38:18,180 WARNING - 5 out of the last 16 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x0000023C1FE52FC0> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 17:38:37,482 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:38:59,599 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:39:22,551 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:39:38,034 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:39:40,815 WARNING - 5 out of the last 14 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x0000023C1FFB9080> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 17:39:59,784 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:40:21,524 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:40:42,833 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:41:03,117 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:41:25,226 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:41:47,615 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:42:07,462 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:42:29,107 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:42:50,250 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:43:11,747 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:43:32,272 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:43:52,577 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:44:15,193 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:44:35,596 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:44:57,046 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:45:18,122 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:45:40,043 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:46:01,553 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:46:23,334 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:46:45,767 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:47:07,256 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:47:29,619 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:47:50,443 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:48:12,791 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:48:35,090 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:48:57,749 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:49:19,851 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:49:41,622 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:50:04,057 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:50:28,779 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:50:50,763 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:51:07,419 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:51:28,929 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:51:51,443 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:52:13,633 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:52:35,769 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:52:58,251 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:53:21,060 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:53:43,038 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:54:04,938 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:54:21,409 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:54:42,860 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:55:07,167 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:55:40,980 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:56:04,183 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:56:28,383 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:56:50,041 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 17:57:01,577 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 18:12:11,252 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 18:25:32,482 WARNING - 5 out of the last 914 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x000001A75520F240> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 18:25:32,570 WARNING - 6 out of the last 915 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x000001A75539E700> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 19:03:42,784 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 19:20:23,575 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 19:37:14,400 WARNING - 5 out of the last 914 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x000001FDD674F240> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 19:37:14,509 WARNING - 6 out of the last 915 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x000001FDD68F6700> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 19:53:44,364 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 20:03:26,659 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 20:28:01,193 WARNING - 5 out of the last 914 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x0000022ED500F240> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 20:28:01,329 WARNING - 6 out of the last 915 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x0000022ED51A2700> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 20:38:39,991 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 20:45:57,394 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 21:24:39,738 WARNING - 5 out of the last 914 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x0000028ED6E63B00> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 21:24:39,865 WARNING - 6 out of the last 915 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x0000028ED6ED32E0> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 21:41:49,993 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 22:15:52,153 WARNING - 5 out of the last 914 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x00000220561D3B00> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 22:15:52,253 WARNING - 6 out of the last 915 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x00000220562432E0> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 22:27:14,727 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-02-06 23:05:54,467 WARNING - 5 out of the last 914 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x0000023A551A3B00> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+2026-02-06 23:05:54,549 WARNING - 6 out of the last 915 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x0000023A562072E0> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
