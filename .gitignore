@@ -113,10 +113,7 @@ htmlcov/
 make_ai/hard_model_1st_best/
 make_ai/hard_model_2nd_best/
 make_ai/light_model_best/
-make_ai/test_ai/
-make_ai/weight_num/
 
 make_ai/weight_num/export_2nd_eval_to_excel/
-
 make_ai\test_ai\query_pole_work\3. raw_pole_data\
 make_ai\test_ai\query_pole_work\4. merge_data\
