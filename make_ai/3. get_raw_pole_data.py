@@ -1,476 +1,362 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""anal2_poles_all JSON에서 전주 목록을 읽어 원본 측정 데이터를 조회·저장"""
+"""분석 완료 전주 목록을 기준으로 원본 계측 CSV를 내려받아 저장한다."""
 
-import sys
-import os
-import json
+from __future__ import annotations
+
+import argparse
 import glob
-import traceback
+import json
+import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 from tqdm import tqdm
 
-# 프로젝트 루트 경로를 sys.path에 추가
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+
+CURRENT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = CURRENT_DIR.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from config import poledb as PDB
 
-# 서버 정보 (JT 서버는 데이터 수집 대상에서 제외)
+
 SERVERS = {
     "main": "메인서버",
     "is": "이수서버",
     "kh": "건화서버",
 }
-
-INPUT_DIR = "2. anal_pole_list"
-OUTPUT_DIR = "3. raw_pole_data"
-NORMAL_POLE_RATIO = 10  # 정상 전주 최대 개수 = 파단 × 이 비율
+DEFAULT_INPUT_DIR = CURRENT_DIR / "2. anal_pole_list"
+DEFAULT_OUTPUT_DIR = CURRENT_DIR / "3. raw_pole_data"
 
 
-def find_latest_json_file():
-    """2. anal_pole_list의 anal2_poles_all_*.json 통합 파일 중 가장 최신 파일 경로 반환"""
-    json_dir = os.path.join(current_dir, INPUT_DIR)
-    pattern = os.path.join(json_dir, "anal2_poles_all_*.json")
-    json_files = glob.glob(pattern)
-    if not json_files:
-        raise FileNotFoundError(f"anal2_poles_all JSON 파일을 찾을 수 없습니다: {pattern}")
-    latest_file = max(json_files, key=os.path.getmtime)
-    print(f"최신 JSON 파일: {latest_file}")
-    return latest_file
-
-def _safe_float(val):
-    """pd.notna 체크 후 float 변환"""
-    return float(val) if val is not None and pd.notna(val) else None
+def find_latest_json(input_dir: Path) -> Path:
+    """`anal2_poles_all_*.json` 중 최신 파일을 찾는다."""
+    files = glob.glob(str(input_dir / "anal2_poles_all_*.json"))
+    if not files:
+        raise FileNotFoundError(f"anal2_poles_all_*.json 파일이 없습니다: {input_dir}")
+    return Path(max(files, key=lambda p: Path(p).stat().st_mtime))
 
 
-def get_pole_anal2_result(server, project_name, poleid):
-    """전주 분석 결과 조회 (B/N만, 2차 분석 우선)"""
-    try:
-        if not hasattr(PDB, 'poledb_conn') or PDB.poledb_conn is None:
-            print(f"    경고 [{poleid}]: 데이터베이스 연결이 없습니다.")
-            return None
+def load_input(json_path: Path) -> Dict:
+    with json_path.open("r", encoding="utf-8") as f:
+        return json.load(f)
 
-        data = [poleid, project_name]
-        query_break = """
-            SELECT 
-                tar.poleid, 
-                tar.breakstate, 
-                tar.breakheight, 
-                tar.breakdegree, 
-                tar.analstep,
-                tas.groupname
-            FROM tb_anal_result tar
-            JOIN tb_anal_state tas ON tar.poleid = tas.poleid
-            WHERE tar.poleid = %s 
-            AND tar.analstep IN (1, 2)
-            AND tar.breakstate = 'B'
-            AND tas.groupname = %s
-            ORDER BY tar.analstep DESC, tar.regdate DESC
-            LIMIT 1
-        """
-        result = PDB.poledb_conn.do_select_pd(query_break, data)
-        if result is not None and not result.empty:
-            row = result.iloc[0]
-            if str(row.get('breakstate', '')).strip().upper() == 'B':
-                if str(row.get('poleid', '')).strip().upper() != str(poleid).strip().upper():
-                    return None
-                if str(row.get('groupname', '')).strip() != project_name:
-                    return None
-                return {
-                    'breakstate': 'B',
-                    'breakheight': _safe_float(row.get('breakheight')),
-                    'breakdegree': _safe_float(row.get('breakdegree')),
-                }
 
-        # 정상(N) 조회
-        query_normal = """
-            SELECT 
-                tar.poleid, 
-                tar.breakstate, 
-                tar.breakheight, 
-                tar.breakdegree, 
-                tar.analstep,
-                tas.groupname
-            FROM tb_anal_result tar
-            JOIN tb_anal_state tas ON tar.poleid = tas.poleid
-            WHERE tar.poleid = %s 
-            AND tar.analstep IN (1, 2)
-            AND tar.breakstate = 'N'
-            AND tas.groupname = %s
-            ORDER BY tar.analstep DESC, tar.regdate DESC
-            LIMIT 1
-        """
-        result = PDB.poledb_conn.do_select_pd(query_normal, data)
-        if result is not None and not result.empty:
-            row = result.iloc[0]
-            if str(row.get('breakstate', '')).strip().upper() == 'N':
-                if str(row.get('poleid', '')).strip().upper() != str(poleid).strip().upper():
-                    return None
-                if str(row.get('groupname', '')).strip() != project_name:
-                    return None
-                return {'breakstate': 'N', 'breakheight': None, 'breakdegree': None}
-
+def safe_float(value) -> Optional[float]:
+    if value is None or pd.isna(value):
         return None
-    except Exception as e:
-        print(f"    [{poleid}] 분석 결과 조회 오류: {e}")
-        traceback.print_exc()
+    return float(value)
+
+
+def query_latest_anal_result(project_name: str, poleid: str) -> Optional[Dict[str, Optional[float]]]:
+    """전주의 최신(2차 우선) 분석 결과를 조회한다."""
+    if not hasattr(PDB, "poledb_conn") or PDB.poledb_conn is None:
         return None
 
-def _pole_dir_has_csv(pole_dir):
-    """전주 디렉토리에 CSV 파일이 있는지 확인"""
-    if not os.path.isdir(pole_dir):
-        return False
-    return any(f.endswith('.csv') for f in os.listdir(pole_dir))
+    query = """
+        SELECT
+            tar.poleid,
+            COALESCE(tar.breakstate, 'N') AS breakstate,
+            tar.breakheight,
+            tar.breakdegree,
+            tas.groupname
+        FROM tb_anal_result tar
+        INNER JOIN tb_anal_state tas ON tar.poleid = tas.poleid
+        INNER JOIN (
+            SELECT poleid, MAX(analstep) AS max_analstep
+            FROM tb_anal_result
+            WHERE analstep IN (1, 2)
+            GROUP BY poleid
+        ) max_step ON tar.poleid = max_step.poleid AND tar.analstep = max_step.max_analstep
+        INNER JOIN (
+            SELECT poleid, analstep, MAX(regdate) AS max_regdate
+            FROM tb_anal_result
+            WHERE analstep IN (1, 2)
+            GROUP BY poleid, analstep
+        ) latest
+          ON tar.poleid = latest.poleid
+         AND tar.analstep = latest.analstep
+         AND tar.regdate = latest.max_regdate
+        WHERE tas.groupname = %s
+          AND tar.poleid = %s
+        LIMIT 1
+    """
+    result = PDB.poledb_conn.do_select_pd(query, [project_name, poleid])
+    if result is None or result.empty:
+        return None
+
+    row = result.iloc[0]
+    if str(row.get("groupname", "")).strip() != project_name:
+        return None
+    if str(row.get("poleid", "")).strip().upper() != str(poleid).strip().upper():
+        return None
+
+    breakstate = str(row.get("breakstate", "N")).strip().upper()
+    if breakstate not in {"B", "N"}:
+        breakstate = "N"
+    return {
+        "breakstate": breakstate,
+        "breakheight": safe_float(row.get("breakheight")) if breakstate == "B" else None,
+        "breakdegree": safe_float(row.get("breakdegree")) if breakstate == "B" else None,
+    }
 
 
-def _get_saved_pole_ids(output_base_dir, project_name, category):
-    """카테고리별 저장된 전주 ID 집합 반환"""
-    project_dir = os.path.join(output_base_dir, category, project_name)
-    if not os.path.isdir(project_dir):
+def pole_has_csvs(pole_dir: Path) -> bool:
+    return pole_dir.exists() and any(p.suffix.lower() == ".csv" for p in pole_dir.iterdir())
+
+
+def get_saved_pole_ids(base_dir: Path, project_name: str, category: str) -> Set[str]:
+    """이미 저장된 전주 ID를 반환한다."""
+    project_dir = base_dir / category / project_name
+    if not project_dir.exists():
         return set()
-    return {
-        d for d in os.listdir(project_dir)
-        if _pole_dir_has_csv(os.path.join(project_dir, d))
-    }
+    return {p.name for p in project_dir.iterdir() if p.is_dir() and pole_has_csvs(p)}
 
 
-def check_pole_data_exists(output_base_dir, project_name, poleid, anal_result):
-    """전주 데이터 저장 여부 확인"""
-    category = 'break' if anal_result['breakstate'] == 'B' else 'normal'
-    pole_dir = os.path.join(output_base_dir, category, project_name, poleid)
-    return _pole_dir_has_csv(pole_dir)
+def save_raw_measurements(
+    project_name: str,
+    poleid: str,
+    anal_result: Dict[str, Optional[float]],
+    output_base: Path,
+) -> bool:
+    """단일 전주의 원본 계측 데이터를 저장한다."""
+    category = "break" if anal_result["breakstate"] == "B" else "normal"
+    target_dir = output_base / category / project_name / poleid
+    target_dir.mkdir(parents=True, exist_ok=True)
 
-
-def count_saved_poles_in_project(output_base_dir, project_name, category):
-    """프로젝트에 저장된 전주 수 (카테고리별)"""
-    return len(_get_saved_pole_ids(output_base_dir, project_name, category))
-
-
-def get_saved_pole_ids_in_project(output_base_dir, project_name):
-    """프로젝트에 저장된 전체 전주 ID 집합 (break + normal)"""
-    return _get_saved_pole_ids(output_base_dir, project_name, 'break') | \
-           _get_saved_pole_ids(output_base_dir, project_name, 'normal')
-
-_QUERY_DB_POLE_COUNT = """
-    SELECT COUNT(DISTINCT tas.poleid) as count
-    FROM tb_anal_state tas
-    INNER JOIN tb_anal_result tar ON tas.poleid = tar.poleid
-    INNER JOIN (
-        SELECT tar1.poleid, MAX(tar1.analstep) as max_analstep
-        FROM tb_anal_result tar1
-        WHERE tar1.analstep IN (1, 2)
-        GROUP BY tar1.poleid
-    ) tar_max ON tar.poleid = tar_max.poleid
-    INNER JOIN (
-        SELECT tar2.poleid, tar2.analstep, MAX(tar2.regdate) as max_regdate
-        FROM tb_anal_result tar2
-        WHERE tar2.analstep IN (1, 2)
-        GROUP BY tar2.poleid, tar2.analstep
-    ) tar_latest ON tar.poleid = tar_latest.poleid
-        AND tar.analstep = tar_latest.analstep
-        AND tar.regdate = tar_latest.max_regdate
-        AND tar.analstep = tar_max.max_analstep
-    WHERE tas.groupname = %s
-"""
-
-
-def _count_db_poles(project_name, breakstate=None):
-    """DB 전주 수 조회 (breakstate 지정 시 필터)"""
-    try:
-        if not hasattr(PDB, 'poledb_conn') or PDB.poledb_conn is None:
-            return 0
-        query = _QUERY_DB_POLE_COUNT + (" AND COALESCE(tar.breakstate, 'N') = %s" if breakstate else "")
-        data = [project_name, breakstate] if breakstate else [project_name]
-        result = PDB.poledb_conn.do_select_pd(query, data)
-        return int(result.iloc[0]['count']) if result is not None and not result.empty else 0
-    except Exception as e:
-        print(f"    [디버그] DB 전주 수 조회 오류: {e}")
-        traceback.print_exc()
-        return 0
-
-
-def count_db_poles_in_project(server, project_name, breakstate):
-    """DB에서 프로젝트의 전주 수 조회 (B 또는 N, 2차 분석 우선)"""
-    return _count_db_poles(project_name, breakstate)
-
-def _safe_get_value(row, col_name, alt_names=None):
-    """DataFrame row에서 컬럼 값을 안전하게 가져오기"""
-    for name in ([col_name] + (alt_names or [])):
-        if name in row.index and pd.notna(row.get(name)):
-            return row[name]
-    return None
-
-
-def _build_meas_info(row):
-    """측정 결과 row에서 meas_info 딕셔너리 생성"""
-    def _f(col, alts):
-        v = _safe_get_value(row, col, alts)
-        return float(v) if v is not None else None
-    def _s(col, alts):
-        v = _safe_get_value(row, col, alts)
-        return str(v) if v is not None else None
-    return {
-        'stdegree': _f('stdegree', ['stDegree']),
-        'eddegree': _f('eddegree', ['edDegree']),
-        'stheight': _f('stheight', ['stHeight']),
-        'edheight': _f('edheight', ['edHeight']),
-        'sttime': _s('sttime', ['stTime']),
-        'endtime': _s('endtime', ['endTime', 'edtime']),
-    }
-
-
-def save_pole_raw_data(server, project_name, poleid, anal_result, output_base_dir):
-    """전주 원본 데이터 조회 및 저장. 반환: True(성공), False(실패), None(이미 존재)"""
-    try:
-        if check_pole_data_exists(output_base_dir, project_name, poleid, anal_result):
-            return None
-
-        if anal_result['breakstate'] == 'B':
-            category = 'break'
-            breakheight = anal_result.get('breakheight')
-            breakdegree = anal_result.get('breakdegree')
-            break_info = f"_breakheight_{breakheight}_breakdegree_{breakdegree}" if breakheight is not None and breakdegree is not None else ""
-        else:
-            category = 'normal'
-            break_info = ""
-        
-        pole_dir = os.path.join(output_base_dir, category, project_name, poleid)
-        os.makedirs(pole_dir, exist_ok=True)
-
-        # 측정 결과 조회
-        re_out = PDB.get_meas_result(poleid, 'OUT')
-        re_in = PDB.get_meas_result(poleid, 'IN')
-        
-        num_sig_out = re_out.shape[0] if re_out is not None and not re_out.empty else 0
-        num_sig_in = re_in.shape[0] if re_in is not None and not re_in.empty else 0
-        
-        # CSV 파일 저장
-        # IN 데이터 저장
-        for kk in range(num_sig_in):
-            stype = 'IN'
-            num = int(re_in['measno'][kk])
-            time = str(re_in['sttime'][kk])
-            time = (time.split(" "))[0] if " " in time else time
-            
-            in_x = PDB.get_meas_data(poleid, num, stype, 'x')
-            if in_x is not None and not in_x.empty:
-                filename = f"{poleid}_{kk+1}_{time}_IN_x{break_info}.csv"
-                in_x.to_csv(os.path.join(pole_dir, filename), index=False)
-        
-        # OUT 데이터 저장
-        for kk in range(num_sig_out):
-            stype = 'OUT'
-            num = int(re_out['measno'][kk])
-            time = str(re_out['sttime'][kk])
-            time = (time.split(" "))[0] if " " in time else time
-            
-            out_x = PDB.get_meas_data(poleid, num, stype, 'x')
-            out_y = PDB.get_meas_data(poleid, num, stype, 'y')
-            out_z = PDB.get_meas_data(poleid, num, stype, 'z')
-            
-            if out_x is not None and not out_x.empty:
-                filename = f"{poleid}_{kk+1}_{time}_OUT_x{break_info}.csv"
-                out_x.to_csv(os.path.join(pole_dir, filename), index=False)
-            
-            if out_y is not None and not out_y.empty:
-                filename = f"{poleid}_{kk+1}_{time}_OUT_y{break_info}.csv"
-                out_y.to_csv(os.path.join(pole_dir, filename), index=False)
-            
-            if out_z is not None and not out_z.empty:
-                filename = f"{poleid}_{kk+1}_{time}_OUT_z{break_info}.csv"
-                out_z.to_csv(os.path.join(pole_dir, filename), index=False)
-        
-        measurements_info = {}
-        if re_out is not None and not re_out.empty:
-            for kk in range(num_sig_out):
-                measno = int(re_out['measno'][kk])
-                meas_info = {'measno': measno, 'devicetype': 'OUT', **_build_meas_info(re_out.iloc[kk])}
-                measurements_info[f'OUT_{measno}'] = meas_info
-        if re_in is not None and not re_in.empty:
-            for kk in range(num_sig_in):
-                measno = int(re_in['measno'][kk])
-                meas_info = {'measno': measno, 'devicetype': 'IN', **_build_meas_info(re_in.iloc[kk])}
-                measurements_info[f'IN_{measno}'] = meas_info
-
-        # JSON 메타 정보 저장
-        info_filename = f"{poleid}_break_info.json" if anal_result['breakstate'] == 'B' else f"{poleid}_normal_info.json"
-        info_data = {
-            'poleid': poleid,
-            'project_name': project_name,
-            'breakstate': anal_result['breakstate'],
-            'breakheight': anal_result.get('breakheight') if anal_result['breakstate'] == 'B' else None,
-            'breakdegree': anal_result.get('breakdegree') if anal_result['breakstate'] == 'B' else None,
-            'measurements': measurements_info,
-        }
-        with open(os.path.join(pole_dir, info_filename), 'w', encoding='utf-8') as f:
-            json.dump(info_data, f, ensure_ascii=False, indent=2)
-
+    if pole_has_csvs(target_dir):
         return True
-    except Exception as e:
-        print(f"    [{poleid}] 원본 데이터 저장 오류: {e}")
-        traceback.print_exc()
-        return False
 
-def _save_run_summary_json(output_base_dir, json_file_path, stats, max_normal_poles, total_saved_break, total_saved_normal_after_run):
-    """실행 요약을 통합 JSON 1개로 저장 (1·2번 스크립트 저장 방식에 맞춤)"""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    summary_filename = os.path.join(output_base_dir, f"raw_pole_data_summary_{timestamp}.json")
-    summary_data = {
-        "timestamp": timestamp,
-        "source_json": os.path.basename(json_file_path),
-        "source_path": json_file_path,
-        "output_dir": output_base_dir,
-        "stats": stats,
-        "max_normal_poles": max_normal_poles,
-        "total_saved_break": total_saved_break,
-        "total_saved_normal_after_run": total_saved_normal_after_run,
+    re_out = PDB.get_meas_result(poleid, "OUT")
+    re_in = PDB.get_meas_result(poleid, "IN")
+
+    def save_axis_csv(df: pd.DataFrame, devicetype: str, axis: str, idx: int) -> None:
+        measno = int(df["measno"][idx])
+        dt = str(df["sttime"][idx]).split(" ")[0]
+        meas_df = PDB.get_meas_data(poleid, measno, devicetype, axis)
+        if meas_df is None or meas_df.empty:
+            return
+        suffix = ""
+        if anal_result["breakstate"] == "B":
+            bh = anal_result.get("breakheight")
+            bd = anal_result.get("breakdegree")
+            if bh is not None and bd is not None:
+                suffix = f"_breakheight_{bh}_breakdegree_{bd}"
+        out_name = f"{poleid}_{idx+1}_{dt}_{devicetype}_{axis}{suffix}.csv"
+        meas_df.to_csv(target_dir / out_name, index=False)
+
+    out_count = 0
+    if re_in is not None and not re_in.empty:
+        for idx in range(len(re_in)):
+            save_axis_csv(re_in, "IN", "x", idx)
+            out_count += 1
+
+    if re_out is not None and not re_out.empty:
+        for idx in range(len(re_out)):
+            for axis in ("x", "y", "z"):
+                save_axis_csv(re_out, "OUT", axis, idx)
+            out_count += 1
+
+    info_name = f"{poleid}_break_info.json" if anal_result["breakstate"] == "B" else f"{poleid}_normal_info.json"
+    info_data = {
+        "poleid": poleid,
+        "project_name": project_name,
+        "breakstate": anal_result["breakstate"],
+        "breakheight": anal_result.get("breakheight"),
+        "breakdegree": anal_result.get("breakdegree"),
     }
-    with open(summary_filename, "w", encoding="utf-8") as f:
-        json.dump(summary_data, f, ensure_ascii=False, indent=2)
-    print(f"실행 요약 저장: {summary_filename}")
+    with (target_dir / info_name).open("w", encoding="utf-8") as f:
+        json.dump(info_data, f, ensure_ascii=False, indent=2)
+
+    return out_count > 0
 
 
-def _process_category_poles(servers_data, output_base_dir, stats, category, max_normal=None, initial_count=0):
-    """카테고리(break/normal)별 전주 데이터 수집. normal일 때 max_normal, initial_count 사용"""
-    breakstate = 'B' if category == 'break' else 'N'
-    cat_name = '파단' if category == 'break' else '정상'
-    current_count = [initial_count]
+def process_category(
+    servers_data: Dict,
+    output_dir: Path,
+    stats: Dict[str, int],
+    category: str,
+    normal_limit: Optional[int] = None,
+    already_saved_normal: int = 0,
+) -> int:
+    """카테고리(break/normal)별 데이터를 수집한다."""
+    expected_breakstate = "B" if category == "break" else "N"
+    collected_normal = already_saved_normal
 
-    for server, server_info in servers_data.items():
-        if server == "jt":
+    for server, server_payload in servers_data.items():
+        if server not in SERVERS:
             continue
-        if max_normal is not None and current_count[0] >= max_normal:
-            break
 
-        print(f"\n[{SERVERS.get(server, server)}] ({cat_name}) 전주 처리 시작")
+        print(f"\n[{SERVERS[server]}] {category} 수집 시작")
+        PDB.poledb_init(server)
+        projects = server_payload.get("projects", {})
+        for project_name, project_info in projects.items():
+            if normal_limit is not None and collected_normal >= normal_limit:
+                break
 
-        try:
-            PDB.poledb_init(server)
-            projects_data = server_info.get('projects', {})
+            target_ids = project_info.get("pole_ids", [])
+            saved_ids = get_saved_pole_ids(output_dir, project_name, category)
+            pending_ids = [pid for pid in target_ids if pid not in saved_ids]
+            if not pending_ids:
+                continue
 
-            for project_idx, (project_name, project_info) in enumerate(projects_data.items(), 1):
-                if max_normal is not None and current_count[0] >= max_normal:
+            for poleid in tqdm(pending_ids, desc=f"  {project_name}", unit="pole", leave=False):
+                if normal_limit is not None and collected_normal >= normal_limit:
                     break
-                pole_ids = project_info.get('pole_ids', [])
-                saved_count = count_saved_poles_in_project(output_base_dir, project_name, category)
-                db_count = count_db_poles_in_project(server, project_name, breakstate)
 
-                if saved_count == db_count:
+                result = query_latest_anal_result(project_name, poleid)
+                if result is None:
+                    stats["skipped"] += 1
+                    continue
+                if result["breakstate"] != expected_breakstate:
                     continue
 
-                saved_ids = _get_saved_pole_ids(output_base_dir, project_name, category)
-                unsaved_ids = [pid for pid in pole_ids if pid not in saved_ids]
-                if not unsaved_ids:
+                ok = save_raw_measurements(project_name, poleid, result, output_dir)
+                if not ok:
+                    stats["errors"] += 1
                     continue
 
-                for poleid in tqdm(unsaved_ids, desc=f"  {project_name} ({cat_name} 수집)"):
-                    if max_normal is not None and current_count[0] >= max_normal:
-                        break
-                    if category == 'break':
-                        stats['total_poles'] += 1
+                if category == "break":
+                    stats["saved_break"] += 1
+                else:
+                    stats["saved_normal"] += 1
+                    collected_normal += 1
 
-                    try:
-                        anal_result = get_pole_anal2_result(server, project_name, poleid)
-                        if anal_result is None:
-                            stats['skipped_poles'] += 1
-                            continue
-                        if anal_result['breakstate'] != breakstate:
-                            continue
-
-                        result = save_pole_raw_data(server, project_name, poleid, anal_result, output_base_dir)
-                        if result is None:
-                            stats['skipped_existing'] += 1
-                        elif result:
-                            stats['break_poles' if category == 'break' else 'normal_poles'] += 1
-                            if category == 'normal':
-                                current_count[0] += 1
-                        else:
-                            stats['error_poles'] += 1
-                    except Exception as e:
-                        print(f"    [{poleid}] 처리 오류: {e}")
-                        stats['error_poles'] += 1
-
-        except Exception as e:
-            print(f"[{SERVERS.get(server, server)}] 서버 처리 오류: {e}")
+    return collected_normal
 
 
-def process_all_poles_from_json(json_file_path):
-    """JSON에서 전주 목록을 읽어 원본 데이터 조회 및 저장"""
-    print(f"\nJSON 파일 읽기: {json_file_path}")
-    with open(json_file_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+def count_total_saved(output_dir: Path) -> Tuple[int, int]:
+    """누적 저장된 break/normal 전주 수를 계산한다."""
+    break_count = 0
+    normal_count = 0
 
-    output_base_dir = os.path.join(current_dir, OUTPUT_DIR)
-    os.makedirs(output_base_dir, exist_ok=True)
-    
-    # 통계 정보
-    stats = {
-        'total_poles': 0,
-        'break_poles': 0,
-        'normal_poles': 0,
-        'skipped_poles': 0,
-        'skipped_existing': 0,
-        'skipped_limit': 0,
-        'error_poles': 0,
-    }
-    servers_data = data.get('servers', {})
-
-    # 1단계: 파단(B) 전주 수집
-    print("\n1단계: 파단(B) 전주 데이터 수집 시작")
-    _process_category_poles(servers_data, output_base_dir, stats, 'break')
-
-    total_saved_break = 0
-    total_saved_normal = 0
-    for server, server_info in servers_data.items():
-        if server == "jt":
+    for category, ref in (("break", "break"), ("normal", "normal")):
+        base = output_dir / category
+        if not base.exists():
             continue
-        for project_name in server_info.get('projects', {}):
-            total_saved_break += count_saved_poles_in_project(output_base_dir, project_name, 'break')
-            total_saved_normal += count_saved_poles_in_project(output_base_dir, project_name, 'normal')
-    max_normal_poles = total_saved_break * NORMAL_POLE_RATIO
+        for project_dir in base.iterdir():
+            if not project_dir.is_dir():
+                continue
+            for pole_dir in project_dir.iterdir():
+                if not pole_dir.is_dir():
+                    continue
+                if pole_has_csvs(pole_dir):
+                    if ref == "break":
+                        break_count += 1
+                    else:
+                        normal_count += 1
+    return break_count, normal_count
 
-    print(f"\n2단계: 정상(N) 전주 데이터 수집 시작")
-    print(f"파단: {total_saved_break}개, 정상: {total_saved_normal}개, 목표: {max_normal_poles}개")
 
-    if total_saved_break > 0 and total_saved_normal >= max_normal_poles:
-        _save_run_summary_json(output_base_dir, json_file_path, stats, max_normal_poles, total_saved_break, total_saved_normal)
-        return
+def save_summary(
+    output_dir: Path,
+    source_json: Path,
+    stats: Dict[str, int],
+    normal_limit: int,
+    total_break: int,
+    total_normal: int,
+) -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    out_path = output_dir / f"raw_pole_data_summary_{timestamp}.json"
+    with out_path.open("w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "timestamp": timestamp,
+                "source_json": source_json.name,
+                "source_path": str(source_json),
+                "output_dir": str(output_dir),
+                "stats": stats,
+                "normal_ratio_limit": normal_limit,
+                "total_saved_break": total_break,
+                "total_saved_normal": total_normal,
+            },
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+    return out_path
 
-    # 2단계: 정상(N) 전주 수집 (최대 파단의 NORMAL_POLE_RATIO배까지)
-    _process_category_poles(
-        servers_data, output_base_dir, stats, 'normal',
-        max_normal=max_normal_poles, initial_count=total_saved_normal
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="원본 전주 데이터 다운로드")
+    parser.add_argument(
+        "--input-json",
+        default=None,
+        help="입력 anal2_poles_all_*.json 경로 (미지정 시 최신 파일 자동 탐색)",
+    )
+    parser.add_argument(
+        "--input-dir",
+        default=str(DEFAULT_INPUT_DIR),
+        help="입력 JSON 탐색 디렉터리",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=str(DEFAULT_OUTPUT_DIR),
+        help="원본 데이터 저장 디렉터리",
+    )
+    parser.add_argument(
+        "--normal-ratio",
+        type=int,
+        default=10,
+        help="정상 전주 최대 비율 = 파단 전주 수 * normal-ratio",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    input_json = Path(args.input_json) if args.input_json else find_latest_json(Path(args.input_dir))
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    payload = load_input(input_json)
+    servers_data = payload.get("servers", {})
+    stats = {
+        "saved_break": 0,
+        "saved_normal": 0,
+        "skipped": 0,
+        "errors": 0,
+    }
+
+    print("=" * 70)
+    print("3단계: 원본 데이터 수집 시작")
+    print(f"입력 JSON: {input_json}")
+    print("=" * 70)
+
+    process_category(servers_data, output_dir, stats, category="break")
+    total_break, total_normal = count_total_saved(output_dir)
+    normal_limit = total_break * args.normal_ratio
+
+    if total_break > 0 and total_normal < normal_limit:
+        process_category(
+            servers_data,
+            output_dir,
+            stats,
+            category="normal",
+            normal_limit=normal_limit,
+            already_saved_normal=total_normal,
+        )
+        total_break, total_normal = count_total_saved(output_dir)
+
+    summary_path = save_summary(
+        output_dir=output_dir,
+        source_json=input_json,
+        stats=stats,
+        normal_limit=normal_limit,
+        total_break=total_break,
+        total_normal=total_normal,
     )
 
-    # 최종 통계 출력
-    print(f"\n전체 처리 완료")
-    print(f"파단: {stats['break_poles']}개, 정상: {stats['normal_poles']}개")
-    print(f"저장 위치: {output_base_dir}")
-
-    # 실행 요약 통합 JSON 1개 저장 (1·2번 스크립트 저장 방식에 맞춤)
-    _save_run_summary_json(
-        output_base_dir, json_file_path, stats, max_normal_poles,
-        total_saved_break, total_saved_normal + stats.get("normal_poles", 0),
-    )
+    print("\n수집 완료")
+    print(f"  break 전주: {total_break}")
+    print(f"  normal 전주: {total_normal}")
+    print(f"  summary: {summary_path}")
+    print("=" * 70)
 
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("원본 전주 데이터 수집 시작")
-    print("=" * 60)
-    try:
-        json_file = find_latest_json_file()
-        process_all_poles_from_json(json_file)
-        print("\n" + "=" * 60)
-        print("원본 전주 데이터 수집 완료")
-        print("=" * 60)
-    except Exception as e:
-        print(f"\n오류 발생: {e}")
-        traceback.print_exc()
-
+    main()

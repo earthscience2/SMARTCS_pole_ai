@@ -4,6 +4,11 @@ r"""
 4. merge_data 전체에 대해 2차 Hard 모델(13. evaluate_hard_model_2nd)의 검출 결과를
 엑셀로 정리해서 make_ai/test 아래에 저장하는 스크립트.
 
+[프로젝트/전주 불일치 원인]
+  프로젝트·전주는 predictions.csv 의 csv_path 경로를 파싱해 정함 (4. merge_data/break|normal/프로젝트명/전주ID).
+  따라서 4. merge_data 폴더 구조가 잘못되면(다른 프로젝트 폴더 아래 전주가 있으면) 엑셀에 잘못된 프로젝트가 찍힘.
+  이 스크립트는 3-1 단계에서 DB(tb_anal_state, tb_pole)로 전주 소속 프로젝트를 조회해 경로와 다르면 보정함.
+
 사용 방법(권장 순서):
 1) 먼저 13. evaluate_hard_model_2nd.py 를 4. merge_data 전체에 대해 실행
    예) PowerShell:
@@ -21,6 +26,7 @@ r"""
 """
 
 import os
+import sys
 import glob
 import json
 from pathlib import Path
@@ -31,6 +37,30 @@ import pandas as pd
 from tensorflow import keras
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
+
+
+def _get_project_for_pole_from_db(server: str, pole_id: str, project_root: Path):
+    """DB에서 전주(pole_id)의 실제 소속 프로젝트(groupname) 조회. 실패 시 None."""
+    if not pole_id or not server:
+        return None
+    try:
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+        from config import poledb as PDB
+        PDB.poledb_init(server)
+        if not hasattr(PDB, "poledb_conn") or PDB.poledb_conn is None:
+            return None
+        q = "SELECT groupname FROM tb_anal_state WHERE poleid = %s LIMIT 1"
+        result = PDB.poledb_conn.do_select_pd(q, [pole_id])
+        if result is not None and not result.empty:
+            return str(result.iloc[0]["groupname"]).strip()
+        q2 = "SELECT groupname FROM tb_pole WHERE poleid = %s LIMIT 1"
+        result2 = PDB.poledb_conn.do_select_pd(q2, [pole_id])
+        if result2 is not None and not result2.empty:
+            return str(result2.iloc[0]["groupname"]).strip()
+    except Exception:
+        pass
+    return None
 
 
 def _get_latest_eval_dir(base: Path) -> Path:
@@ -159,6 +189,26 @@ def main():
     df["server"] = servers
     df["project"] = projects
     df["pole_id"] = pole_ids
+
+    # 3-1) DB에서 전주 소속 프로젝트 확인 후 보정 (경로 파싱만으로는 폴더 잘못 시 프로젝트/전주 불일치 발생)
+    project_root = make_ai_dir.parent
+    seen_mismatch = set()
+    for i in range(len(df)):
+        pid = pole_ids[i] if i < len(pole_ids) else None
+        srv = servers[i] if i < len(servers) else None
+        path_project = projects[i] if i < len(projects) else None
+        if not pid or not srv:
+            continue
+        db_project = _get_project_for_pole_from_db(srv, str(pid).strip(), project_root)
+        if db_project is None:
+            continue
+        if path_project != db_project:
+            key = (srv, pid, path_project, db_project)
+            if key not in seen_mismatch:
+                seen_mismatch.add(key)
+                print(f"  [보정] 전주 {pid}: 경로상 프로젝트 '{path_project}' → DB 소속 '{db_project}' 로 수정")
+            projects[i] = db_project
+    df["project"] = projects
 
     # 4) label(0/1)을 사람이 보기 쉬운 텍스트로 추가
     df["label_text"] = df["label"].map({1: "break", 0: "normal"}).fillna("unknown")

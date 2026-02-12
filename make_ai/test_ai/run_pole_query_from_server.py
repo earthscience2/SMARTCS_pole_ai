@@ -497,40 +497,53 @@ def run_for_single_pole(server: str, pole_id: str, project_name: str):
 
     print("\n5. 라이트 모델 예측")
     print("-" * 60)
-    # 라이트 모델 디렉터리는 상위 make_ai 기준
-    light_models_base = ROOT_DIR / "7. light_models"
-    latest_light = None
-    if light_models_base.exists():
-        for d in sorted(light_models_base.iterdir(), key=lambda x: x.name, reverse=True):
-            if d.is_dir() and (d / "checkpoints" / "best.keras").exists():
-                latest_light = d
-                break
-    if latest_light is None:
-        print("   경고: 7. light_models 최신 run 없음. 라이트 확률 0으로 진행.")
+    # 라이트 모델: 고정된 best 모델 경로 사용
+    # make_ai/light_model_best/20260128_1726 내부 구조에 맞게 필요시 수정
+    fixed_light_dir = ROOT_DIR / "light_model_best" / "20260128_1726"
+    if not fixed_light_dir.exists():
+        print(f"   경고: 라이트 best 모델 디렉터리 없음: {fixed_light_dir}")
+        latest_light = None
     else:
-        print(f"   라이트 모델: {latest_light.name}")
+        latest_light = fixed_light_dir
+        print(f"   라이트 모델(고정): {latest_light}")
     light_probs = (
         run_light_predict(csv_paths, latest_light)
         if latest_light
         else {p: 0.0 for p in csv_paths}
     )
 
-    print("\n6. 하드 모델 예측 (13. evaluate_hard_model_2nd 실행)")
+    print("\n6. 하드 모델 예측 (고정 best 모델 사용)")
     print("-" * 60)
-    # 13번 스크립트는 make_ai 기준으로 data-dir을 해석하므로
-    # test_ai/query_pole_work 경로를 상대 경로로 넘긴다.
-    merge_rel = os.path.join("test_ai", "query_pole_work", "4. merge_data")
-    hard_rows = run_hard_predict_and_get_scores(merge_rel, csv_paths)
-    if not hard_rows:
+    # 기존 13. evaluate_hard_model_2nd 호출 대신, hard_model_2nd_best에서 점수 로드
+    hard_best_dir = ROOT_DIR / "hard_model_2nd_best"
+    predictions_csv = hard_best_dir / "predictions.csv"
+    hard_rows = []
+    if not hard_best_dir.exists() or not predictions_csv.exists():
         print(
-            "   경고: 하드 예측 결과 없음(13. 실행 실패 또는 query_pole_work 결과 없음). "
-            "x/y/z score 0으로 진행."
+            f"   경고: 하드 best 모델 결과(predictions.csv)를 찾을 수 없습니다: {predictions_csv}"
         )
-        print(
-            "   참고: 13. evaluate_hard_model_2nd가 query_pole_work/4. merge_data 데이터로 "
-            "결과를 내려면, 해당 경로에 break 또는 normal/프로젝트/전주/*_OUT_processed.csv 가 "
-            "있어야 합니다."
-        )
+        print("   x/y/z score 0으로 진행합니다.")
+    else:
+        try:
+            import pandas as pd
+            df_hard = pd.read_csv(predictions_csv, encoding="utf-8-sig")
+            for _, row in df_hard.iterrows():
+                hard_rows.append(
+                    {
+                        "csv_path": row.get("csv_path", ""),
+                        "x_score": float(row.get("x_score", 0) or 0.0),
+                        "y_score": float(row.get("y_score", 0) or 0.0),
+                        "z_score": float(row.get("z_score", 0) or 0.0),
+                        "label": row.get("label", 0),
+                    }
+                )
+            print(
+                f"   하드 best 모델 predictions.csv 로드 완료 (행 수: {len(hard_rows)})"
+            )
+        except Exception as e:
+            print(f"   경고: hard_model_2nd_best/predictions.csv 읽기 실패: {e}")
+            print("   x/y/z score 0으로 진행합니다.")
+            hard_rows = []
 
     # csv_path 매칭: 1) norm 경로 2) 파일명(basename) fallback
     def norm_path(p):

@@ -1,10 +1,12 @@
-"""Hard ResNet 모델 2차 학습 - confidence head 추가 학습 (x/y/z축)"""
+# -*- coding: utf-8 -*-
+"""Hard ResNet stage-2 training with confidence heads (x/y/z axes)."""
 
 import os
 import sys
 import subprocess
 from pathlib import Path
 
+import argparse
 import json
 import datetime
 import numpy as np
@@ -15,13 +17,13 @@ from sklearn.model_selection import train_test_split
 
 
 # ============================================================================
-# Windows에서 실행 시 WSL2로 넘겨 GPU 사용 (bbox 학습 스크립트와 동일 패턴)
+# Windows에서 --local 없이 실행하면 WSL2 스크립트로 위임해 GPU 학습한다.
 # ============================================================================
 
 _run_local = "--local" in sys.argv or sys.platform != "win32"
 if _run_local:
     if "--local" in sys.argv:
-        # 이후 로직에서는 --local 플래그 제거
+        # 이후 argparse에서 인식되지 않도록 제거
         sys.argv = [a for a in sys.argv if a != "--local"]
 else:
     _script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -35,10 +37,10 @@ else:
         _wsl_path = (
             "/mnt/" + _drive[0].lower() + str(_abs)[len(_drive):].replace("\\", "/")
         ) if _drive else str(_abs).replace("\\", "/")
-        print("WSL2에서 GPU 학습(Conf head) 실행:", _wsl_path)
-        ret = subprocess.run(["wsl", "bash", _wsl_path], cwd=str(_project_root))
+        print("WSL2에서 GPU 학습(conf head) 실행:", _wsl_path)
+        ret = subprocess.run(["wsl", "bash", _wsl_path] + sys.argv[1:], cwd=str(_project_root))
         sys.exit(ret.returncode)
-    # 스크립트 없으면 로컬(현재 Python)에서 그대로 진행
+    # 스크립트가 없으면 현재 Python 프로세스에서 로컬 실행
 
 
 # ============================================================================
@@ -48,40 +50,35 @@ else:
 BASE_SEED = 42
 BATCH = 32
 EPOCHS = 300
-P = 3  # prediction 개수 (기존 ResNet bbox 모델과 동일)
+CONF_LR = 1e-3
+P = 3  # 축별 prediction 개수
 
-# conf 학습에 사용할 IoU 기준(축별 설정)
-# - 연속 타깃(target_conf = max IoU)을 학습하지만,
-#   축별로 "고품질 박스"를 판단할 때 참고할 threshold를 함께 기록해 둔다.
+# conf 학습용 IoU 기준(축별 설정)
+# - 연속형 target_conf = max IoU로 학습
+# - 축별 "고품질 박스" threshold 판단에 참고
 IOU_POS_THRESHOLD_PER_AXIS = {
     "x": 0.5,
-    "y": 0.4,  # Y축은 상대적으로 IoU 분포가 낮아 약간 더 느슨하게
+    "y": 0.4,  # Y축은 IoU 분포가 상대적으로 낮아 완화
     "z": 0.5,
 }
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
-# 1차 Hard 베스트 모델 디렉터리 (x/y/z best_x/y/z.keras 모아둔 곳)
-# 예: make_ai/hard_model_1st_best/checkpoints/best_x.keras ...
+# 1차 Hard best 모델 디렉터리
+# make_ai/hard_model_1st_best/checkpoints/best_x.keras ...
 FIRST_STAGE_RUN_DIR = Path(current_dir) / "hard_model_1st_best"
+first_stage_run_dir = None
+ckpt_dir = None
 
 
-# 기존에는 10. hard_models_1st에서 최신 run을 고르도록 했으나,
-# 이제는 명시적으로 hard_model_1st_best 폴더를 기준으로 사용한다.
-first_stage_run_dir = FIRST_STAGE_RUN_DIR
-if not first_stage_run_dir.exists():
-    raise FileNotFoundError(f"1차 Hard 베스트 모델 디렉터리를 찾을 수 없습니다: {first_stage_run_dir}")
-
-print(f"1차 Hard 모델 run 사용 (hard_model_1st_best): {first_stage_run_dir}")
-
-ckpt_dir = first_stage_run_dir / "checkpoints"
-if not ckpt_dir.is_dir():
-    raise FileNotFoundError(f"체크포인트 디렉터리 없음: {ckpt_dir}")
+# 기본값은 `hard_model_1st_best`를 사용한다.
+# 필요하면 `--first-stage-run-dir`로 10. hard_models_1st의 특정 run을 지정할 수 있다.
 
 
 # ============================================================================
-# 데이터 로드 / ROI 타겟 슬라이스 / IoU 계산 (기존 코드와 동일한 형태)
-#  - 기본은 9. hard_train_data 최신 run을 사용, 없으면 5. train_data fallback
+# 데이터 로드 / ROI 슬라이스 / IoU 계산
+# - 기본: 9. hard_train_data 최신 run 사용
+# - fallback: 5. train_data
 # ============================================================================
 
 DATA_FALLBACK_ROOT = Path(current_dir) / "5. train_data"
@@ -96,7 +93,7 @@ test_lab = test_dir / "break_labels_test.npy"
 
 
 def get_latest_hard_train_dir(base: Path):
-    """9. hard_train_data 안에서 train/test NPY가 모두 있는 run 중 이름 기준 최신 폴더 반환."""
+    """9. hard_train_data에서 train/test NPY가 있는 최신 run을 반환한다."""
     if base is None or not base.exists():
         return None
     try:
@@ -130,7 +127,7 @@ def slice_roi_targets(y, roi_idx: int, K: int):
     """
     y: (N, 1+15K).
     반환: y_cls (N,1), y_reg_roi (N, 5K) = [bbox_r(4K), mask_r(K)].
-    (기존 train_break_pattern_resnet_bbox*.py 와 동일 로직)
+    (기존 train_break_pattern_resnet_bbox*.py와 동일 로직)
     """
     bbox_dim = 12 * K  # 3*K*4
     mask_dim = 3 * K
@@ -156,7 +153,7 @@ def to_corners_np(x):
 def iou_matrix_np(pred, gt, eps=1e-8):
     """
     pred: (N, P, 4), gt: (N, K, 4)  ->  IoU: (N, P, K)
-    (기존 eval_bbox_roi_bestpair 와 동일 구조)
+    (기존 eval_bbox_roi_bestpair  일 구조)
     """
     phmin, phmax, pdmin, pdmax = to_corners_np(pred[:, :, None, :])
     thmin, thmax, tdmin, tdmax = to_corners_np(gt[:, None, :, :])
@@ -174,20 +171,20 @@ def iou_matrix_np(pred, gt, eps=1e-8):
 
 
 # ============================================================================
-# Axis별: best 모델 로드 + IoU 기반 confidence 타깃 계산 + conf head 학습
+# Axis best 모델 로드 + IoU 기반 confidence 계산 + conf head 습
 # ============================================================================
 
 def build_conf_model_for_axis(axis: str, base_model: keras.Model, input_shape):
     """
-    - base_model: best_x / best_y / best_z (bbox 회귀까지 포함된 전체 모델)
-    - backbone(GAP 전까지)은 freeze 하고,
-      GAP feature 위에 작은 MLP + P-way sigmoid head를 올려 confidence만 학습.
+    - base_model: best_x / best_y / best_z (bbox 까 함체 모델)
+    - backbone(GAP 까) freeze 고,
+      GAP feature 에  MLP + P-way sigmoid head려 confidence습.
     """
     gap_layer_name = f"resnet18_like_reg_{axis}_gap"
     try:
         gap_layer = base_model.get_layer(gap_layer_name)
     except ValueError as e:
-        raise ValueError(f"GAP 레이어를 찾을 수 없습니다: {gap_layer_name}") from e
+        raise ValueError(f"GAP 이 찾을 습다: {gap_layer_name}") from e
 
     # feature extractor (freeze)
     feature_model = keras.Model(base_model.input, gap_layer.output, name=f"{axis}_feature_model")
@@ -201,9 +198,9 @@ def build_conf_model_for_axis(axis: str, base_model: keras.Model, input_shape):
     conf_out = layers.Dense(P, activation="sigmoid", name=f"{axis}_conf_out")(x)
 
     conf_model = keras.Model(inp, conf_out, name=f"{axis}_conf_model")
-    # 타깃: 각 박스별 max IoU (연속값 0~1)를 회귀 형태로 근사
+    #  박스max IoU (속0~1) 태근사
     conf_model.compile(
-        optimizer=keras.optimizers.Adam(1e-3),
+        optimizer=keras.optimizers.Adam(CONF_LR),
         loss="mse",
         metrics=["mae"],
     )
@@ -212,37 +209,37 @@ def build_conf_model_for_axis(axis: str, base_model: keras.Model, input_shape):
 
 def compute_conf_targets_for_axis(model: keras.Model, X, y, axis: str, roi_idx: int, K: int):
     """
-    - 고정된 bbox 모델 `model` 로 prediction
-    - 각 샘플/각 pred(p)에 대해: GT들과의 IoU 중 최대값을 confidence 타깃으로 사용
-      ⇒ target_conf: (N, P) in [0, 1] (연속값, max IoU 자체를 예측하도록 학습)
+    - 고정bbox 모델 `model` prediction
+    - 플/pred(p) GT과IoU 최값을 confidence 깃으용
+      target_conf: (N, P) in [0, 1] (속 max IoU 체측도습)
     """
     _, y_reg = slice_roi_targets(y, roi_idx=roi_idx, K=K)
     gt_bbox = y_reg[:, : 4 * K].reshape(-1, K, 4)
-    gt_mask = y_reg[:, 4 * K : 5 * K].reshape(-1, K)  # (N,K), 1이면 유효 GT
+    gt_mask = y_reg[:, 4 * K : 5 * K].reshape(-1, K)  # (N,K), 1면 효 GT
 
     pred = model.predict(X, batch_size=BATCH, verbose=1)
     pred_full = pred.reshape(-1, P, 5)  # [hc,hw,dc,dw,conf(orig)]
     pred_bbox = pred_full[:, :, :4]
 
     iou = iou_matrix_np(pred_bbox, gt_bbox)  # (N,P,K)
-    # GT 없는 영역은 IoU=0으로 처리
+    # GT 는 역 IoU=0로 처리
     iou = np.where(gt_mask[:, None, :] > 0.5, iou, 0.0)
 
-    # 각 샘플/각 pred에 대해 가능한 GT 중 최대 IoU 사용
+    # 플/pred한 GT 최 IoU 용
     raw_iou_max = iou.max(axis=2)  # (N,P), 0~1
 
     # ------------------------------------------------------------------
-    # 축별 IoU threshold를 이용해 "고품질 박스"를 더 강조하는 스케일링
-    #   - IOU_POS_THRESHOLD_PER_AXIS[axis] = t 라고 할 때,
-    #     t 이하는 0 근처로, t 이상~1.0 구간을 [0,1]로 선형 매핑
-    #   - 예) t=0.4 면 IoU 0.4 → 0, IoU 1.0 → 1.0
-    #   - 이렇게 하면 conf=1.0 이 "이 축에서 high-quality IoU" 에 더 직접적으로 대응됨.
+    # 축별 IoU threshold용"고품박스"강조는 링
+    #   - IOU_POS_THRESHOLD_PER_AXIS[axis] = t 고 
+    #     t 하0 근처 t 상~1.0 구간[0,1]형 매핑
+    #   -  t=0.4 IoU 0.4 0, IoU 1.0 1.0
+    #   - 렇면 conf=1.0 "축에high-quality IoU" 직접으됨.
     # ------------------------------------------------------------------
     thr = IOU_POS_THRESHOLD_PER_AXIS.get(axis, 0.5)
     scaled = (raw_iou_max - thr) / max(1e-6, (1.0 - thr))
     scaled = np.clip(scaled, 0.0, 1.0)
 
-    # 연속 타깃: 축별 threshold를 반영한 max IoU 스케일 값 (0~1 실수)
+    # 속  축별 threshold반영max IoU (0~1 수)
     target_conf = scaled.astype("float32")
     return target_conf
 
@@ -252,25 +249,25 @@ def train_conf_for_axis(axis: str, roi_idx: int, X, y, K: int, conf_ckpt_dir: Pa
 
     best_path = ckpt_dir / f"best_{axis}.keras"
     if not best_path.exists():
-        raise FileNotFoundError(f"best 모델 없음: {best_path}")
+        raise FileNotFoundError(f"best 모델 음: {best_path}")
 
     print("Loading base model:", best_path)
     base_model = keras.models.load_model(str(best_path), compile=False)
-    base_model.trainable = False  # 전체 freeze (안전장치)
+    base_model.trainable = False  # 체 freeze (전치)
 
     # -------------------------------
-    # 1) break 샘플만 대상으로 사용
+    # 1) break 플으용
     # -------------------------------
     labels = y[:, 0].astype(int)
     mask_break = labels == 1
     if not np.any(mask_break):
-        raise RuntimeError("break(label=1) 샘플이 없어 conf 학습을 진행할 수 없습니다.")
+        raise RuntimeError("break(label=1) 플어 conf 습진행습다.")
 
     X_break = X[mask_break]
     y_break = y[mask_break]
-    print(f"break 샘플 수: {X_break.shape[0]} / 전체 {X.shape[0]}")
+    print(f"break 플  {X_break.shape[0]} / 체 {X.shape[0]}")
 
-    # break 샘플에 대해 IoU 기반 confidence 타깃 계산
+    # break 플IoU 기반 confidence 계산
     print(
         "Computing IoU-based confidence targets "
         f"(axis={axis}, scaled by IOU_POS_THRESHOLD_PER_AXIS={IOU_POS_THRESHOLD_PER_AXIS.get(axis, 0.5)})..."
@@ -280,7 +277,7 @@ def train_conf_for_axis(axis: str, roi_idx: int, X, y, K: int, conf_ckpt_dir: Pa
     )
     print("y_conf_full shape:", y_conf_full.shape)  # (N_break,P)
 
-    # train/val 인덱스 분할 (라벨 y_break[:,0] 기준 stratify)
+    # train/val 덱분할 (벨 y_break[:,0] 기 stratify)
     indices = np.arange(X_break.shape[0])
     train_idx, val_idx = train_test_split(
         indices,
@@ -294,7 +291,7 @@ def train_conf_for_axis(axis: str, roi_idx: int, X, y, K: int, conf_ckpt_dir: Pa
 
     print("X_train:", X_train.shape, "X_val:", X_val.shape)
 
-    # conf 모델 구성 및 학습
+    # conf 모델 구성 습
     conf_model = build_conf_model_for_axis(axis, base_model, input_shape=X.shape[1:])
 
     callbacks = [
@@ -316,11 +313,11 @@ def train_conf_for_axis(axis: str, roi_idx: int, X, y, K: int, conf_ckpt_dir: Pa
         verbose=1,
     )
 
-    # conf 모델 저장 (2차 Hard run 디렉터리의 checkpoints 폴더에 저장)
+    # conf 모델 (2Hard run 렉리checkpoints 더
     conf_ckpt_dir.mkdir(parents=True, exist_ok=True)
     out_path = conf_ckpt_dir / f"conf_{axis}.keras"
     conf_model.save(str(out_path))
-    print(f"✅ Saved conf model for axis {axis} -> {out_path}")
+    print(f"Saved conf model for axis {axis} -> {out_path}")
 
     return history
 
@@ -331,6 +328,28 @@ def train_conf_for_axis(axis: str, roi_idx: int, X, y, K: int, conf_ckpt_dir: Pa
 
 def main():
     global data_root, train_dir, test_dir, train_seq, train_lab, test_seq, test_lab
+    global BATCH, EPOCHS, CONF_LR, first_stage_run_dir, ckpt_dir
+
+    parser = argparse.ArgumentParser(description="Hard 2차(conf head) 모델 학습")
+    parser.add_argument("--first-stage-run-dir", type=str, default=str(FIRST_STAGE_RUN_DIR), help="1차 hard run 디렉터리")
+    parser.add_argument("--batch-size", type=int, default=BATCH, help="배치 크기")
+    parser.add_argument("--epochs", type=int, default=EPOCHS, help="학습 epoch")
+    parser.add_argument("--learning-rate", type=float, default=CONF_LR, help="conf head 학습률")
+    parser.add_argument("--run-tag", type=str, default="", help="2차 run 폴더명 suffix")
+    args = parser.parse_args()
+
+    BATCH = int(args.batch_size)
+    EPOCHS = int(args.epochs)
+    CONF_LR = float(args.learning_rate)
+
+    first_stage_run_dir = Path(args.first_stage_run_dir).resolve()
+    if not first_stage_run_dir.exists():
+        raise FileNotFoundError(f"1차 hard run 경로를 찾지 못했습니다: {first_stage_run_dir}")
+    ckpt_dir = first_stage_run_dir / "checkpoints"
+    if not ckpt_dir.is_dir():
+        raise FileNotFoundError(f"checkpoints 디렉터리를 찾지 못했습니다: {ckpt_dir}")
+    print(f"1차 Hard run: {first_stage_run_dir}")
+    print(f"학습 설정: batch={BATCH}, epochs={EPOCHS}, lr={CONF_LR}")
 
     print("TF:", tf.__version__)
     print("GPUs:", tf.config.list_physical_devices("GPU"))
@@ -346,7 +365,7 @@ def main():
         train_lab = train_dir / "break_labels_train.npy"
         test_seq = test_dir / "break_imgs_test.npy"
         test_lab = test_dir / "break_labels_test.npy"
-        print("학습 데이터(최신 hard run):", data_run_dir)
+        print("사용 데이터(최신 hard run):", data_run_dir)
     else:
         data_root = DATA_FALLBACK_ROOT
         train_dir = data_root / "train"
@@ -355,12 +374,12 @@ def main():
         train_lab = train_dir / "break_labels_train.npy"
         test_seq = test_dir / "break_imgs_test.npy"
         test_lab = test_dir / "break_labels_test.npy"
-        print("9. hard_train_data에 유효 run 없음 → 5. train_data 사용")
+        print("9. hard_train_data run을 찾지 못해 5. train_data fallback 사용")
 
     if not train_seq.exists() or not train_lab.exists():
         raise FileNotFoundError(
-            f"학습 데이터 없음: {train_seq}, {train_lab}\n"
-            f"※ 먼저 9. set_hard_train_data.py 를 실행해 9. hard_train_data/<날짜>/train, test 에 NPY를 생성하세요."
+            f"학습 데이터 파일이 없습니다: {train_seq}, {train_lab}\n"
+            f"먼저 9. set_hard_train_data.py를 실행해 hard_train_data/<run>/train,test NPY를 생성하세요."
         )
 
     X, y, X_test, y_test, K = load_data()
@@ -373,11 +392,13 @@ def main():
     # 2차 Hard 모델(run) 디렉터리 생성: 12. hard_models_2nd/<timestamp>/
     second_stage_base = Path(current_dir) / "12. hard_models_2nd"
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    if args.run_tag:
+        timestamp = f"{timestamp}_{args.run_tag}"
     second_stage_run_dir = second_stage_base / timestamp
     second_stage_run_dir.mkdir(parents=True, exist_ok=True)
     print("2차 Hard 모델 run 디렉터리:", second_stage_run_dir)
 
-    # 2차 Hard run 전용 checkpoints 디렉터리 (conf_x/y/z.keras 저장 위치)
+    # 2차 Hard run용 checkpoints 디렉터리 (conf_x/y/z.keras 저장)
     second_ckpt_dir = second_stage_run_dir / "checkpoints"
     second_ckpt_dir.mkdir(parents=True, exist_ok=True)
 
@@ -386,7 +407,7 @@ def main():
         hist = train_conf_for_axis(axis, roi_idx, X, y, K=K, conf_ckpt_dir=second_ckpt_dir)
         histories[axis] = {k: [float(v) for v in vals] for k, vals in hist.history.items()}
 
-    # 학습 설정/환경 저장 (2차 Hard 모델용)
+    # 습 정/경 (2Hard 모델
     training_config = {
         "timestamp": timestamp,
         "second_stage_run": second_stage_run_dir.name,
@@ -414,12 +435,12 @@ def main():
             "pred_boxes_per_axis_P": P,
         },
         "loss": {
-            "type": "mse (per-box conf ≈ IoU)",
+            "type": "mse (per-box conf IoU)",
             "iou_pos_threshold_per_axis": {k: float(v) for k, v in IOU_POS_THRESHOLD_PER_AXIS.items()},
         },
         "optimizer": {
             "type": "Adam",
-            "learning_rate": 1e-3,
+            "learning_rate": float(CONF_LR),
         },
         "first_stage_ckpt_dir": str(ckpt_dir),
     }
@@ -427,11 +448,10 @@ def main():
         json.dump(training_config, f, ensure_ascii=False, indent=2)
     with open(second_stage_run_dir / "histories.json", "w", encoding="utf-8") as f:
         json.dump(histories, f, ensure_ascii=False, indent=2)
-    print("2차 Hard 모델 학습 설정/히스토리 저장:", second_stage_run_dir)
+    print("2Hard 모델 습 정/스리 ", second_stage_run_dir)
 
-    print("모든 축에 대해 conf head 학습 완료.")
+    print("모든 축에 conf head 습 료.")
 
 
 if __name__ == "__main__":
     main()
-

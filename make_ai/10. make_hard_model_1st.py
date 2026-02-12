@@ -1,4 +1,5 @@
-"""Hard ResNet bbox 모델 1차 학습 - ROI별 파단 위치 bbox 예측 모델 학습 (x/y/z축)"""
+# -*- coding: utf-8 -*-
+"""Hard ResNet bbox model stage-1 training (x/y/z axes)."""
 
 import os
 from pickle import TRUE
@@ -6,7 +7,7 @@ import sys
 import subprocess
 from pathlib import Path
 
-# Windows에서 --local 없이 실행 시 WSL2 스크립트(10. make_hard_model_1st_wsl2.sh)로 넘겨서 GPU 학습
+# Windows에서 --local 없이 실행하면 WSL2 스크립트로 위임해 GPU 학습한다.
 _run_local = "--local" in sys.argv or sys.platform != "win32"
 if _run_local:
     if "--local" in sys.argv:
@@ -14,7 +15,7 @@ if _run_local:
 else:
     _script_dir = os.path.dirname(os.path.abspath(__file__))
     _project_root = Path(_script_dir).parent
-    # 같은 폴더 또는 make_ai 폴더 아래의 WSL2 실행 스크립트 찾기
+    # 같은 폴더 또는 make_ai 폴더 아래의 WSL2 실행 스크립트 검색
     _sh_path = Path(_script_dir) / "10. make_hard_model_1st_wsl2.sh"
     if not _sh_path.exists():
         _sh_path = _project_root / "make_ai" / "10. make_hard_model_1st_wsl2.sh"
@@ -23,12 +24,13 @@ else:
         _drive = _abs.drive
         _wsl_path = ("/mnt/" + _drive[0].lower() + str(_abs)[len(_drive):].replace("\\", "/")) if _drive else str(_abs).replace("\\", "/")
         print("WSL2에서 GPU 학습 실행:", _wsl_path)
-        ret = subprocess.run(["wsl", "bash", _wsl_path], cwd=str(_project_root))
+        ret = subprocess.run(["wsl", "bash", _wsl_path] + sys.argv[1:], cwd=str(_project_root))
         sys.exit(ret.returncode)
     else:
-        print("WSL2 스크립트(10. make_hard_model_1st_wsl2.sh) 없음 → Windows 로컬(CPU)로 학습 진행")
+        print("WSL2 스크립트가 없어 Windows 로컬(CPU) 학습으로 진행")
 
 import datetime
+import argparse
 import json
 from typing import Tuple, Optional
 
@@ -38,7 +40,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# TensorFlow import (Windows 로컬 시 CUDA PATH 추가)
+# TensorFlow import 전에 Windows CUDA PATH를 보정한다.
 if sys.platform == "win32":
     cuda_path = os.environ.get("CUDA_PATH")
     if cuda_path:
@@ -51,7 +53,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from sklearn.model_selection import train_test_split
 
-# GPU 사용 설정: 존재하면 메모리 증가 방식으로 초기화
+# GPU 설정
 gpus = tf.config.list_physical_devices("GPU")
 if gpus:
     try:
@@ -70,7 +72,7 @@ BASE_SEED = 42
 # 1) 데이터 경로 / 로드
 # ============================================================================
 
-# 기본값 (9. hard_train_data 최신 run 없을 때 5. train_data 사용)
+# 기본값(9. hard_train_data 최신 run이 없으면 5. train_data 사용)
 data_root = Path(current_dir) / "5. train_data"
 train_dir = data_root / "train"
 test_dir = data_root / "test"
@@ -81,7 +83,7 @@ test_lab = test_dir / "break_labels_test.npy"
 
 
 def get_latest_hard_train_dir(base: Path):
-    """base(9. hard_train_data) 안에서 train/test NPY가 모두 있는 run 중 이름 기준 최신 폴더 반환."""
+    """base(9. hard_train_data)에서 train/test NPY가 있는 최신 run을 반환한다."""
     if base is None or not base.exists():
         return None
     try:
@@ -119,7 +121,7 @@ def split_train_val(X, y, test_size=0.2, random_state=BASE_SEED):
 
 
 # ============================================================================
-# 3) ROI 타겟 슬라이스 / 데이터셋
+# 3) ROI 라벨 슬라이스 / 데이터셋
 # ============================================================================
 
 def slice_roi_targets(y, roi_idx: int, K: int):
@@ -138,27 +140,27 @@ def slice_roi_targets(y, roi_idx: int, K: int):
 
 BATCH = 32
 AUTOTUNE = tf.data.AUTOTUNE
-# 학습 시 좌우/상하 flip 증강 사용 여부. 기본 False (실험 설정에서 변경)
+# 학습 시 좌우/상하 flip 증강 사용 여부(실험 설정에서 변경)
 USE_AUGMENTATION = False
 
 
 # ============================================================================
-# 실험 설정: 평가 지표를 바탕으로 한 9가지 하이퍼파라미터 조합
+# 실험 설정(평가 지표 기반 튜닝용)
 #   - P: 축별 예측 박스 개수
 #   - batch: 배치 크기
 #   - use_augmentation: 좌우/상하 flip 증강 사용 여부
-#   - dropout: ResNet 마지막 FC 전에 적용할 dropout
+#   - dropout: ResNet 마지막 FC 전 dropout
 #   - learning_rate: Adam 초기 학습률
-#   - conf_weight: confidence loss 가중치 (기본 0 → 활성화 실험 포함)
-#   - iou_loss_weight: IoU 기반 보조 손실 가중치
-#   - anchor_reg_weight: dead anchor 완화를 위한 anchor 회귀 손실 가중치
+#   - conf_weight: confidence loss 가중치
+#   - iou_loss_weight: IoU 보조 손실 가중치
+#   - anchor_reg_weight: dead anchor 완화용 anchor 회귀 손실 가중치
 # ============================================================================
 
 EXPERIMENTS = [
     {
         "id": 0,
         "name": "base",
-        "description": "기존 설정 그대로 (비교용 기준)",
+        "description": "기본 설정(비교 기준)",
         "P": 3,
         "batch": 32,
         "use_augmentation": False,
@@ -171,7 +173,7 @@ EXPERIMENTS = [
     {
         "id": 1,
         "name": "strong_iou_anchor",
-        "description": "IoU/anchor 가중치 강화 → dead anchor 완화 및 박스 품질 향상 시도",
+        "description": "IoU/anchor 가중치 강화(박스 품질 개선 시도)",
         "P": 3,
         "batch": 32,
         "use_augmentation": False,
@@ -184,7 +186,7 @@ EXPERIMENTS = [
     {
         "id": 2,
         "name": "weak_anchor",
-        "description": "anchor_reg 완화 → 과도한 anchor 균등화가 성능을 깎는지 확인",
+        "description": "anchor_reg 완화(과도한 anchor 균등화 영향 확인)",
         "P": 3,
         "batch": 32,
         "use_augmentation": False,
@@ -197,7 +199,7 @@ EXPERIMENTS = [
     {
         "id": 3,
         "name": "flip_augmentation",
-        "description": "좌우/상하 flip 증강 활성화 → y/z 축 일반화 성능 개선 시도",
+        "description": "flip 증강 활성화(y/z 일반화 성능 개선 시도)",
         "P": 3,
         "batch": 32,
         "use_augmentation": True,
@@ -210,7 +212,7 @@ EXPERIMENTS = [
     {
         "id": 4,
         "name": "P2_fewer_boxes",
-        "description": "P=2 (dead anchor 0 제거 효과 확인, 단순 anchor 구조)",
+        "description": "P=2(단순 anchor 구조, dead anchor 제거 효과 확인)",
         "P": 2,
         "batch": 32,
         "use_augmentation": False,
@@ -223,7 +225,7 @@ EXPERIMENTS = [
     {
         "id": 5,
         "name": "P4_more_boxes",
-        "description": "P=4 (더 많은 anchor로 복잡한 케이스 커버 시도)",
+        "description": "P=4(더 많은 anchor로 복잡한 케이스 커버 시도)",
         "P": 4,
         "batch": 32,
         "use_augmentation": False,
@@ -236,7 +238,7 @@ EXPERIMENTS = [
     {
         "id": 6,
         "name": "conf_0_3",
-        "description": "confidence loss 활성화(conf_weight=0.3) → box 선택 품질 개선",
+        "description": "confidence loss 활성화(conf_weight=0.3)",
         "P": 3,
         "batch": 32,
         "use_augmentation": False,
@@ -249,7 +251,7 @@ EXPERIMENTS = [
     {
         "id": 7,
         "name": "dropout_0_5",
-        "description": "dropout 0.5 → 과적합 완화 및 일반화 향상 시도",
+        "description": "dropout 0.5(과적합 완화 시도)",
         "P": 3,
         "batch": 32,
         "use_augmentation": False,
@@ -262,7 +264,7 @@ EXPERIMENTS = [
     {
         "id": 8,
         "name": "low_lr_5e-4",
-        "description": "학습률 5e-4 (느리지만 안정적인 수렴 패턴 확인)",
+        "description": "학습률 5e-4(느리지만 안정적 수렴 확인)",
         "P": 3,
         "batch": 32,
         "use_augmentation": False,
@@ -277,7 +279,8 @@ EXPERIMENTS = [
 
 def _augment_flip(img: tf.Tensor, y_reg: tf.Tensor, K: int) -> Tuple[tf.Tensor, tf.Tensor]:
     """
-    랜덤 좌우반전(degree축) / 상하반전(height축) 적용. bbox [hc, hw, dc, dw] 정규화 좌표 동기 갱신.
+    데이터 좌우반전(degree) / 상하반전(height) 증강.
+    bbox [hc, hw, dc, dw] 정규좌표를 함께 갱신한다.
     - Horizontal flip (axis 1): dc -> 1 - dc
     - Vertical flip (axis 0): hc -> 1 - hc
     """
@@ -310,7 +313,7 @@ def make_ds_roi(X, y, roi_idx: int, K: int, training: bool, seed: int):
 
 
 # ============================================================================
-# 4) ResNet18-like 모델 (회귀 출력 5*P: hc, hw, dc, dw, confidence)
+# 4) ResNet18-like 모델 ( 출력 5*P: hc, hw, dc, dw, confidence)
 # ============================================================================
 
 def basic_block(x, filters, stride=(1, 1), prefix="bb"):
@@ -382,16 +385,15 @@ def iou_2d_from_center_width(pred, true, eps=1e-7):
     return inter / (union + eps)
 
 
-# conf_loss: bbox 비중 확대를 위해 기본 0.3. IoU threshold 미달 시 conf_loss 미적용.
+# conf_loss: bbox 비중 해 기본 0.3. IoU threshold 미달 conf_loss 미적
 CONF_WEIGHT = 0.0
 IOU_THRESHOLD_FOR_CONF = 0.3
 
-# 추가 IoU 기반 손실 가중치
-# - IOU_LOSS_WEIGHT: best IoU를 직접 끌어올리는 항 (1 - IoU)
-# - ANCHOR_REG_WEIGHT: 각 anchor(box별)가 어떤 GT든 최대한 IoU를 갖도록 하는 보조 회귀 항
-#   ※ dead anchor(box_index=0)가 생기지 않도록 기존보다 가중치를 강화
-IOU_LOSS_WEIGHT = 0.4   # 기본값 (실험 설정에서 덮어씀)
-ANCHOR_REG_WEIGHT = 0.5  # 기본값 (실험 설정에서 덮어씀)
+# 추 IoU 기반 실 중치
+# - IOU_LOSS_WEIGHT: best IoU직접 어리(1 - IoU)
+# - ANCHOR_REG_WEIGHT: anchor(box 떤 GT최IoU갖도는 보조  #   dead anchor(box_index=0) 기 도기존보다 중치강화
+IOU_LOSS_WEIGHT = 0.4   # 기본(험 정서 )
+ANCHOR_REG_WEIGHT = 0.5  # 기본(험 정서 )
 
 
 def huber_bestpair_loss(P: int, K: int, delta=0.05, conf_weight=CONF_WEIGHT, iou_threshold_for_conf=IOU_THRESHOLD_FOR_CONF):
@@ -426,7 +428,7 @@ def huber_bestpair_loss(P: int, K: int, delta=0.05, conf_weight=CONF_WEIGHT, iou
         # best-pair IoU per sample
         best_iou_per_sample = tf.reduce_max(iou_masked, axis=[1, 2])
 
-        # (1) confidence loss: IoU threshold 이상일 때만 conf_loss 적용 (기존 로직)
+        # (1) confidence loss: IoU threshold 상만 conf_loss 용 (기존 로직)
         conf_ok = tf.cast(
             (best_iou_per_sample >= iou_threshold_for_conf) & (has_gt > 0), tf.float32
         )
@@ -435,26 +437,25 @@ def huber_bestpair_loss(P: int, K: int, delta=0.05, conf_weight=CONF_WEIGHT, iou
         denom_conf = tf.reduce_sum(conf_ok) + 1e-7
         conf_loss = tf.reduce_sum(conf_loss_per_sample * conf_ok) / denom_conf
 
-        # (2) IoU 기반 추가 손실: best IoU 자체를 끌어올리기 위한 항
-        #     L_iou = mean(1 - best_iou) over samples with GT
+        # (2) IoU 기반 추 실: best IoU 체어리한         #     L_iou = mean(1 - best_iou) over samples with GT
         iou_loss = tf.reduce_sum((1.0 - best_iou_per_sample) * has_gt) / denom
 
-        # (3) anchor(box)별 보조 회귀 손실:
-        #     각 anchor p에 대해, 해당 anchor와 IoU가 가장 큰 GT를 찾아 huber 회귀를 한 번 더 수행.
-        #     → 특정 anchor(box 0)가 완전히 죽는 현상을 완화하고, 모든 anchor가 어느 정도 유효한 영역을 담당하도록 유도.
+        # (3) anchor(box)보조  실:
+        #     anchor p 당 anchor IoU GT찾아 huber 행.
+        #     정 anchor(box 0) 전죽는 상화고, 모든 anchor 느 도 효역당도도.
         # m: (B, K) 1/0 mask, iou_mat: (B, P, K)
-        # GT가 없는 위치는 0으로 두고, anchor별로 가장 IoU가 큰 GT index 선택
+        # GT 는 치0로 고, anchor별로 IoU GT index 택
         iou_mat_pos = tf.where(m[:, None, :] > 0, iou_mat, tf.zeros_like(iou_mat))
         anchor_best_gt_idx = tf.argmax(iou_mat_pos, axis=2, output_type=tf.int32)  # (B, P)
         gt_for_anchor = tf.gather(gt, anchor_best_gt_idx, batch_dims=1)  # (B, P, 4)
-        # Hub er(reduction=NONE)는 마지막 축을 평균내어 (B, P) 형태를 반환한다.
+        # Hub er(reduction=NONE)마축을 균어 (B, P) 태반환다.
         per_anchor_huber = huber(gt_for_anchor, pred_bbox)  # (B, P)
         anchor_reg_per_sample = tf.reduce_mean(per_anchor_huber, axis=1)  # (B,)
         anchor_reg_loss = tf.reduce_sum(anchor_reg_per_sample * has_gt) / denom
 
-        # (4) dead anchor 패널티:
-        #     각 anchor별 max IoU가 아주 작은 경우(예: <0.05)가 계속 유지되면 추가 벌점을 부여.
-        #     → box_index=0처럼 완전히 사용되지 않는 anchor를 줄이기 위함.
+        # (4) dead anchor 널
+        #     anchormax IoU 주  경우( <0.05) 계속 면 추 벌점
+        #     box_index=0처럼 전용 는 anchor줄이함.
         anchor_max_iou = tf.reduce_max(iou_mat_pos, axis=2)  # (B, P)
         dead_anchor_mask = tf.cast(anchor_max_iou < 0.05, tf.float32)
         dead_anchor_penalty_per_sample = tf.reduce_mean(dead_anchor_mask, axis=1)  # (B,)
@@ -493,11 +494,11 @@ def bbox_iou_metric_maxPK(P: int, K: int, eps=1e-8):
 
 
 # ============================================================================
-# 6) 콜백 / 학습 루프
+# 6) 콜백 / 습 루프
 # ============================================================================
 
 run_dir_base = Path(current_dir) / "10. hard_models_1st"
-run_dir = run_dir_base / "dummy"  # main()에서 timestamp로 덮어씀
+run_dir = run_dir_base / "dummy"  # main()서 timestamp
 ckpt_dir = run_dir / "checkpoints"
 MONITOR = "val_bbox_iou"
 MODE = "max"
@@ -527,8 +528,8 @@ def make_callbacks(axis: str):
 
 def build_and_compile_model(axis: str, input_shape, P: int, K: int, dropout: float, learning_rate: float):
     """
-    축별 ResNet18-like 모델을 생성 및 컴파일.
-    - dropout, learning_rate, 손실 가중치는 실험 설정(EXPERIMENTS)에서 전달.
+    축별 ResNet18-like 모델성 컴파
+    - dropout, learning_rate, 실 중치험 정(EXPERIMENTS)서 달.
     """
     m = build_resnet18_like(
         input_shape=input_shape,
@@ -552,7 +553,7 @@ def build_and_compile_model(axis: str, input_shape, P: int, K: int, dropout: flo
 
 
 # ============================================================================
-# 7) 평가: eval_bbox_roi_bestpair
+# 7) : eval_bbox_roi_bestpair
 # ============================================================================
 
 def to_corners_np(x):
@@ -648,7 +649,7 @@ def load_best_or_current(best_ckpt_path, fallback_model, P: int, K: int):
     if Path(best_ckpt_path).exists():
         print("Loading best model:", best_ckpt_path)
         m = keras.models.load_model(str(best_ckpt_path), compile=False)
-        # 평가 시점에서도 현재 실험 설정(손실 가중치, conf_weight 등)을 반영해 재컴파일
+        #  점서재 험 정(실 중치, conf_weight 반영컴일
         m.compile(
             optimizer=keras.optimizers.Adam(1e-3),
             loss=huber_bestpair_loss(
@@ -672,7 +673,16 @@ def load_best_or_current(best_ckpt_path, fallback_model, P: int, K: int):
 def main():
     global run_dir, ckpt_dir, train_dir, test_dir, train_seq, train_lab, test_seq, test_lab
     global BATCH, USE_AUGMENTATION, CONF_WEIGHT, IOU_LOSS_WEIGHT, ANCHOR_REG_WEIGHT
-    # 학습 데이터 경로: 9. hard_train_data 최신 run 우선, 없으면 5. train_data
+
+    parser = argparse.ArgumentParser(description="Hard 1차 bbox 모델 학습")
+    parser.add_argument("--exp", type=int, default=0, help="실험 설정 ID(EXPERIMENTS 인덱스)")
+    parser.add_argument("--epochs", type=int, default=300, help="학습 epoch")
+    parser.add_argument("--batch-size", type=int, default=None, help="배치 크기 override")
+    parser.add_argument("--learning-rate", type=float, default=None, help="학습률 override")
+    parser.add_argument("--dropout", type=float, default=None, help="dropout override")
+    parser.add_argument("--run-tag", type=str, default="", help="run 폴더명 suffix")
+    args = parser.parse_args()
+    # Data path: prefer latest run under 9. hard_train_data, fallback to 5. train_data
     hard_data_base = Path(current_dir) / "9. hard_train_data"
     data_run_dir = get_latest_hard_train_dir(hard_data_base)
     if data_run_dir is not None:
@@ -682,41 +692,38 @@ def main():
         train_lab = train_dir / "break_labels_train.npy"
         test_seq = test_dir / "break_imgs_test.npy"
         test_lab = test_dir / "break_labels_test.npy"
-        print("학습 데이터(최신 run):", data_run_dir)
+        print("사용 데이터(최신 hard run):", data_run_dir)
     else:
-        print("9. hard_train_data에 유효 run 없음 → 5. train_data 사용")
+        print("9. hard_train_data run을 찾지 못해 5. train_data fallback 사용")
 
-    # 실험 설정 선택: --exp <id> (0~8). 지정 없으면 id=0(base) 사용.
-    exp_id = 0
-    for i, arg in enumerate(list(sys.argv)):
-        if arg.startswith("--exp="):
-            try:
-                exp_id = int(arg.split("=", 1)[1])
-            except ValueError:
-                pass
-        elif arg == "--exp" and i + 1 < len(sys.argv):
-            try:
-                exp_id = int(sys.argv[i + 1])
-            except ValueError:
-                pass
+    # Select experiment profile by --exp
+    exp_id = int(args.exp)
     if not (0 <= exp_id < len(EXPERIMENTS)):
-        print(f"경고: 유효하지 않은 --exp 값 {exp_id} → 0(base)로 대체")
+        print(f"경고: --exp {exp_id}가 유효하지 않아 exp=0(base)로 대체")
         exp_id = 0
-    exp = EXPERIMENTS[exp_id]
+    exp = dict(EXPERIMENTS[exp_id])
+    if args.batch_size is not None:
+        exp["batch"] = int(args.batch_size)
+    if args.learning_rate is not None:
+        exp["learning_rate"] = float(args.learning_rate)
+    if args.dropout is not None:
+        exp["dropout"] = float(args.dropout)
 
-    # 전역 하이퍼파라미터 갱신
+    # Apply experiment hyperparameters
     BATCH = int(exp["batch"])
     USE_AUGMENTATION = bool(exp["use_augmentation"])
     CONF_WEIGHT = float(exp["conf_weight"])
     IOU_LOSS_WEIGHT = float(exp["iou_loss_weight"])
     ANCHOR_REG_WEIGHT = float(exp["anchor_reg_weight"])
 
-    print(f"실행 실험 설정 id={exp_id}, name={exp['name']}")
+    print(f"선택 실험: id={exp_id}, name={exp['name']}")
     print("  P:", exp["P"], "batch:", BATCH, "use_aug:", USE_AUGMENTATION)
     print("  lr:", exp["learning_rate"], "dropout:", exp["dropout"])
     print("  conf_weight:", CONF_WEIGHT, "iou_loss_weight:", IOU_LOSS_WEIGHT, "anchor_reg_weight:", ANCHOR_REG_WEIGHT)
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    if args.run_tag:
+        timestamp = f"{timestamp}_{args.run_tag}"
     run_dir = run_dir_base / f"{timestamp}_exp{exp_id}_{exp['name']}"
     ckpt_dir = run_dir / "checkpoints"
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -729,8 +736,8 @@ def main():
 
     if not train_seq.exists() or not train_lab.exists():
         raise FileNotFoundError(
-            f"학습 데이터 없음: {train_seq}, {train_lab}\n"
-            f"※ 9. set_hard_train_data.py 를 먼저 실행해 9. hard_train_data/<날짜>/train, test 에 NPY를 생성하세요."
+            f"학습 데이터 파일이 없습니다: {train_seq}, {train_lab}\n"
+            f"먼저 9. set_hard_train_data.py를 실행해 hard_train_data/<run>/train,test NPY를 생성하세요."
         )
 
     X, y, X_test, y_test, K = load_data()
@@ -741,9 +748,9 @@ def main():
     print("X_train:", X_train.shape, "X_val:", X_val.shape)
 
     P = int(exp["P"])
-    EPOCHS = 300
+    EPOCHS = int(args.epochs)
 
-    # 학습 설정/환경 저장
+    # 습 정/경 
     training_config = {
         "timestamp": timestamp,
         "model_run": run_dir.name,
@@ -796,9 +803,9 @@ def main():
     }
     with open(run_dir / "training_config.json", "w", encoding="utf-8") as f:
         json.dump(training_config, f, ensure_ascii=False, indent=2)
-    print("학습 설정 저장:", run_dir / "training_config.json")
+    print("습 정 ", run_dir / "training_config.json")
 
-    # fallback용 기본 모델 (체크포인트가 없을 때 사용)
+    # fallback기본 모델 (체크인 을 용)
     model_x = build_resnet18_like(
         input_shape=X_train.shape[1:],
         pred_num=P,
@@ -836,7 +843,7 @@ def main():
         history = model.fit(ds_train, validation_data=ds_val, epochs=EPOCHS, callbacks=callbacks, verbose=1)
         histories[axis] = {k: [float(v) for v in vals] for k, vals in history.history.items()}
 
-    # 테스트 평가
+    # 스
     seed_test = BASE_SEED + 999
     best_x = load_best_or_current(ckpt_dir / "best_x.keras", model_x, P=P, K=K)
     best_y = load_best_or_current(ckpt_dir / "best_y.keras", model_y, P=P, K=K)
@@ -849,16 +856,16 @@ def main():
 
     out_dir = run_dir / "eval_bestpair"
     out_dir.mkdir(parents=True, exist_ok=True)
-    print("평가 결과 저장:", out_dir)
+    print(" 결과 ", out_dir)
     res_x = eval_bbox_roi_bestpair(best_x, X_test, y_test, roi_idx=0, K=K, P=P, batch=BATCH, save_dir=out_dir, prefix="x_")
     res_y = eval_bbox_roi_bestpair(best_y, X_test, y_test, roi_idx=1, K=K, P=P, batch=BATCH, save_dir=out_dir, prefix="y_")
     res_z = eval_bbox_roi_bestpair(best_z, X_test, y_test, roi_idx=2, K=K, P=P, batch=BATCH, save_dir=out_dir, prefix="z_")
 
-    # 학습 히스토리 저장
+    # 습 스리 
     with open(run_dir / "histories.json", "w", encoding="utf-8") as f:
         json.dump(histories, f, ensure_ascii=False, indent=2)
-    print("학습 완료. 체크포인트:", ckpt_dir)
-    print("평가 결과 디렉터리:", out_dir)
+    print("습 료. 체크인", ckpt_dir)
+    print(" 결과 렉리:", out_dir)
 
 
 if __name__ == "__main__":

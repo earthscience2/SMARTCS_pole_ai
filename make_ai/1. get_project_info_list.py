@@ -1,30 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""각 서버에서 프로젝트 목록을 조회하여 JSON 파일로 저장"""
+"""서버별 프로젝트 목록과 분석 진행 통계를 조회해 JSON으로 저장한다."""
 
-import sys
-import os
+from __future__ import annotations
+
+import argparse
 import json
+import os
+import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, List, Optional
+
 from tqdm import tqdm
 
-# 프로젝트 루트 경로를 sys.path에 추가
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+
+CURRENT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = CURRENT_DIR.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from config import poledb as PDB
 
-# 서버 정보 (JT 서버는 데이터 수집 대상에서 제외)
-SERVERS = {
+
+SERVERS: Dict[str, str] = {
     "main": "메인서버",
     "is": "이수서버",
     "kh": "건화서버",
 }
-
-OUTPUT_DIR = "1. project_info_list"
+DEFAULT_OUTPUT_DIR = CURRENT_DIR / "1. project_info_list"
 DEFAULT_STATS = {
     "total_poles": 0,
     "not_measured": 0,
@@ -39,19 +43,15 @@ DEFAULT_STATS = {
 }
 
 
-def _calc_summary(project_list):
-    """프로젝트 목록에서 전체 통계 요약 계산"""
-    total_poles = sum(p["statistics"]["total_poles"] for p in project_list)
-    total_not_measured = sum(p["statistics"]["not_measured"] for p in project_list)
+def calc_summary(projects: List[Dict]) -> Dict:
+    """프로젝트 목록에서 합계 통계를 계산한다."""
+    total_poles = sum(p["statistics"]["total_poles"] for p in projects)
+    total_not_measured = sum(p["statistics"]["not_measured"] for p in projects)
     total_measured = total_poles - total_not_measured
-    total_anal1 = sum(p["statistics"]["anal1_completed"] for p in project_list)
-    total_anal2 = sum(p["statistics"]["anal2_completed"] for p in project_list)
-    total_anal1_break = sum(p["statistics"].get("anal1_break_count", 0) for p in project_list)
-    total_anal2_break = sum(p["statistics"].get("anal2_break_count", 0) for p in project_list)
-
-    anal2_ratio = (total_anal2 / total_poles * 100) if total_poles > 0 else 0
-    anal1_break_ratio = (total_anal1_break / total_anal1 * 100) if total_anal1 > 0 else 0.0
-    anal2_break_ratio = (total_anal2_break / total_anal2 * 100) if total_anal2 > 0 else 0.0
+    total_anal1 = sum(p["statistics"]["anal1_completed"] for p in projects)
+    total_anal2 = sum(p["statistics"]["anal2_completed"] for p in projects)
+    total_anal1_break = sum(p["statistics"].get("anal1_break_count", 0) for p in projects)
+    total_anal2_break = sum(p["statistics"].get("anal2_break_count", 0) for p in projects)
 
     return {
         "total_poles": total_poles,
@@ -59,269 +59,248 @@ def _calc_summary(project_list):
         "total_measured": total_measured,
         "total_anal1_completed": total_anal1,
         "total_anal2_completed": total_anal2,
-        "overall_anal2_ratio": round(anal2_ratio, 2),
+        "overall_anal2_ratio": round((total_anal2 / total_poles * 100) if total_poles else 0.0, 2),
         "total_anal1_break": total_anal1_break,
         "total_anal2_break": total_anal2_break,
-        "anal1_break_ratio": round(anal1_break_ratio, 2),
-        "anal2_break_ratio": round(anal2_break_ratio, 2),
+        "anal1_break_ratio": round((total_anal1_break / total_anal1 * 100) if total_anal1 else 0.0, 2),
+        "anal2_break_ratio": round((total_anal2_break / total_anal2 * 100) if total_anal2 else 0.0, 2),
     }
 
 
-def get_anal2_completed_count(project_name):
-    """
-    프로젝트에서 2차 분석 완료된 전주 수를 직접 조회
-    
-    Args:
-        project_name: 프로젝트 이름
-    
-    Returns:
-        int: 2차 분석 완료된 전주 수
-    """
-    try:
-        # 데이터베이스 연결 확인
-        if not hasattr(PDB, 'poledb_conn') or PDB.poledb_conn is None:
-            return 0
-        
-        # 2차 분석 완료된 전주 조회
-        # 1. tb_anal_state에서 anal2finyn이 NULL이 아닌 전주
-        # 2. tb_anal_result에 analstep=2인 결과가 있는 전주
-        query = """
-            SELECT COUNT(DISTINCT tas.poleid) as count
-            FROM tb_anal_state tas
-            INNER JOIN tb_anal_result tar ON tas.poleid = tar.poleid
-            WHERE tas.groupname = %s
-            AND tas.anal2finyn IS NOT NULL
-            AND tar.analstep = 2
-        """
-        
-        data = [project_name]
-        result = PDB.poledb_conn.do_select_pd(query, data)
-        
-        if result is None or result.empty:
-            return 0
-        
-        return int(result.iloc[0]['count'])
-        
-    except Exception as e:
-        print(f"    경고: 2차 분석 완료 전주 수 조회 실패: {e}")
+def query_anal2_completed_count(project_name: str) -> int:
+    """해당 프로젝트에서 2차 분석 완료 전주 수를 조회한다."""
+    if not hasattr(PDB, "poledb_conn") or PDB.poledb_conn is None:
         return 0
 
-def get_anal_break_counts(project_name):
+    query = """
+        SELECT COUNT(DISTINCT tas.poleid) AS count
+        FROM tb_anal_state tas
+        INNER JOIN tb_anal_result tar ON tas.poleid = tar.poleid
+        WHERE tas.groupname = %s
+          AND tas.anal2finyn IS NOT NULL
+          AND tar.analstep = 2
     """
-    프로젝트에서 1차·2차 분석 완료 전주 중 파단(breakstate='B') 전주 수를 조회
-    
-    Returns:
-        tuple: (anal1_break_count, anal2_break_count)
-    """
-    try:
-        if not hasattr(PDB, 'poledb_conn') or PDB.poledb_conn is None:
-            return 0, 0
-        # 1차 분석 완료 중 파단 (breakstate 'B')
-        q1 = """
-            SELECT COUNT(DISTINCT tas.poleid) as cnt
-            FROM tb_anal_state tas
-            INNER JOIN tb_anal_result tar ON tas.poleid = tar.poleid AND tar.analstep = 1 AND tar.breakstate = 'B'
-            WHERE tas.groupname = %s
-        """
-        # 2차 분석 완료 중 파단
-        q2 = """
-            SELECT COUNT(DISTINCT tas.poleid) as cnt
-            FROM tb_anal_state tas
-            INNER JOIN tb_anal_result tar ON tas.poleid = tar.poleid AND tar.analstep = 2 AND tar.breakstate = 'B'
-            WHERE tas.groupname = %s
-        """
-        r1 = PDB.poledb_conn.do_select_pd(q1, [project_name])
-        r2 = PDB.poledb_conn.do_select_pd(q2, [project_name])
-        c1 = int(r1.iloc[0]['cnt']) if r1 is not None and not r1.empty else 0
-        c2 = int(r2.iloc[0]['cnt']) if r2 is not None and not r2.empty else 0
-        return c1, c2
-    except Exception as e:
+    result = PDB.poledb_conn.do_select_pd(query, [project_name])
+    if result is None or result.empty:
+        return 0
+    return int(result.iloc[0]["count"])
+
+
+def query_break_counts(project_name: str) -> tuple[int, int]:
+    """1차/2차 분석 결과에서 파단(B) 전주 수를 조회한다."""
+    if not hasattr(PDB, "poledb_conn") or PDB.poledb_conn is None:
         return 0, 0
 
-def get_project_statistics(server, project_name):
-    """프로젝트의 통계 정보 조회 (2차분석 여부와 무관하게 전체 수집)"""
+    q1 = """
+        SELECT COUNT(DISTINCT tas.poleid) AS cnt
+        FROM tb_anal_state tas
+        INNER JOIN tb_anal_result tar
+            ON tas.poleid = tar.poleid
+           AND tar.analstep = 1
+           AND tar.breakstate = 'B'
+        WHERE tas.groupname = %s
+    """
+    q2 = """
+        SELECT COUNT(DISTINCT tas.poleid) AS cnt
+        FROM tb_anal_state tas
+        INNER JOIN tb_anal_result tar
+            ON tas.poleid = tar.poleid
+           AND tar.analstep = 2
+           AND tar.breakstate = 'B'
+        WHERE tas.groupname = %s
+    """
+    r1 = PDB.poledb_conn.do_select_pd(q1, [project_name])
+    r2 = PDB.poledb_conn.do_select_pd(q2, [project_name])
+    c1 = int(r1.iloc[0]["cnt"]) if r1 is not None and not r1.empty else 0
+    c2 = int(r2.iloc[0]["cnt"]) if r2 is not None and not r2.empty else 0
+    return c1, c2
+
+
+def get_project_statistics(project_name: str) -> Optional[Dict]:
+    """단일 프로젝트의 통계 정보를 조회한다."""
     try:
         all_poles = PDB.get_pole_list_a(project_name)
         total_poles = len(all_poles) if all_poles is not None and not all_poles.empty else 0
 
-        diag_progress = None
-        if hasattr(PDB, 'group_diag_progress_info'):
+        diag = None
+        if hasattr(PDB, "group_diag_progress_info"):
             try:
-                diag_progress = PDB.group_diag_progress_info(project_name)
+                diag = PDB.group_diag_progress_info(project_name)
             except Exception:
-                diag_progress = None
-        if diag_progress is None:
-            diag_progress = {"total": total_poles, "-": 0, "MF": 0, "AP": 0, "AF": 0, "el": 0}
+                diag = None
+        if diag is None:
+            diag = {"total": total_poles, "-": 0, "MF": 0, "AP": 0, "AF": 0, "el": 0}
 
-        anal_progress = None
-        if hasattr(PDB, 'group_anal_progress_info'):
+        anal = None
+        if hasattr(PDB, "group_anal_progress_info"):
             try:
-                anal_progress = PDB.group_anal_progress_info(project_name)
+                anal = PDB.group_anal_progress_info(project_name)
             except Exception:
-                anal_progress = None
-        if anal_progress is None:
-            anal_progress = {"total": total_poles, "anal1": 0, "anal2": 0, "none": total_poles}
+                anal = None
+        if anal is None:
+            anal = {"total": total_poles, "anal1": 0, "anal2": 0, "none": total_poles}
 
-        anal2_count = get_anal2_completed_count(project_name)
-        anal1_break, anal2_break = get_anal_break_counts(project_name)
+        anal2_count = query_anal2_completed_count(project_name)
+        anal1_break, anal2_break = query_break_counts(project_name)
 
-        anal_progress["anal2"] = anal2_count
-        anal1_count = anal_progress.get("anal1", 0)
-        anal2_ratio = (anal2_count / total_poles * 100) if total_poles > 0 else 0
-        anal1_break_ratio = (anal1_break / anal1_count * 100) if anal1_count > 0 else 0.0
-        anal2_break_ratio = (anal2_break / anal2_count * 100) if anal2_count > 0 else 0.0
-        
+        anal1_count = int(anal.get("anal1", 0))
+        anal2_ratio = (anal2_count / total_poles * 100) if total_poles else 0.0
+        anal1_break_ratio = (anal1_break / anal1_count * 100) if anal1_count else 0.0
+        anal2_break_ratio = (anal2_break / anal2_count * 100) if anal2_count else 0.0
+
         return {
             "total_poles": total_poles,
-            "not_measured": diag_progress.get("-", 0),  # 미측정
-            "not_analyzed": anal_progress.get("none", 0),  # 미분석
-            "anal1_completed": anal1_count,  # 1차 분석 완료
-            "anal2_completed": anal_progress.get("anal2", 0),  # 2차 분석 완료
-            "anal2_ratio": round(anal2_ratio, 2),  # 2차 분석 완료 비율 (%)
-            "anal1_break_count": anal1_break,   # 1차 분석 완료 중 파단 전주 수
-            "anal2_break_count": anal2_break,   # 2차 분석 완료 중 파단 전주 수
-            "anal1_break_ratio": round(anal1_break_ratio, 2),  # 1차 완료 중 파단 비율 (%)
-            "anal2_break_ratio": round(anal2_break_ratio, 2),  # 2차 완료 중 파단 비율 (%)
+            "not_measured": int(diag.get("-", 0)),
+            "not_analyzed": int(anal.get("none", 0)),
+            "anal1_completed": anal1_count,
+            "anal2_completed": anal2_count,
+            "anal2_ratio": round(anal2_ratio, 2),
+            "anal1_break_count": anal1_break,
+            "anal2_break_count": anal2_break,
+            "anal1_break_ratio": round(anal1_break_ratio, 2),
+            "anal2_break_ratio": round(anal2_break_ratio, 2),
         }
-    except Exception as e:
-        print(f"  [{project_name}] 통계 조회 오류: {e}")
+    except Exception as exc:
+        print(f"  [{project_name}] 통계 조회 실패: {exc}")
         return None
 
-def get_project_list_from_server(server):
-    """지정 서버에서 프로젝트 목록 및 통계 조회 (2차분석 여부와 무관하게 전체 수집)"""
-    try:
-        print(f"\n[{SERVERS[server]}] 연결 중...")
-        PDB.poledb_init(server)
 
-        project_list = PDB.groupname_info()
-        if project_list is None:
-            print(f"[{SERVERS[server]}] 프로젝트 목록 조회 실패")
-            return []
+def get_projects_from_server(server: str) -> List[Dict]:
+    """서버에서 프로젝트 목록과 통계를 수집한다."""
+    print(f"\n[{SERVERS[server]}] DB 연결")
+    PDB.poledb_init(server)
 
-        print(f"[{SERVERS[server]}] 전체 프로젝트 개수: {len(project_list)}개")
-        print(f"[{SERVERS[server]}] 각 프로젝트의 통계 정보 조회 중...")
-
-        projects_with_stats = []
-        total_projects = len(project_list)
-        pbar = tqdm(
-            total=total_projects,
-            desc=f"  [{SERVERS[server]}] 프로젝트 처리",
-            unit="프로젝트",
-            leave=False,
-            bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]',
-            ncols=100,
-            dynamic_ncols=False
-        )
-        
-        for project_name in project_list:
-            stats = get_project_statistics(server, project_name)
-            pbar.update(1)
-
-            if stats is None:
-                project_info = {"project_name": project_name, "statistics": DEFAULT_STATS.copy()}
-            else:
-                project_info = {"project_name": project_name, "statistics": stats}
-            
-            projects_with_stats.append(project_info)
-
-        pbar.close()
-        
-        print(f"[{SERVERS[server]}] 통계 정보 조회 완료: {len(projects_with_stats)}개")
-        return projects_with_stats
-        
-    except Exception as e:
-        print(f"[{SERVERS[server]}] 오류 발생: {e}")
+    project_list = PDB.groupname_info()
+    if project_list is None:
+        print(f"[{SERVERS[server]}] 프로젝트 목록 조회 실패")
         return []
 
-def save_project_list_to_json(server, project_list):
-    """프로젝트 목록을 JSON 파일로 저장"""
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    output_dir = Path(current_dir) / OUTPUT_DIR
+    projects: List[Dict] = []
+    pbar = tqdm(project_list, desc=f"[{SERVERS[server]}] 프로젝트", unit="project")
+    for project_name in pbar:
+        stats = get_project_statistics(project_name)
+        projects.append({
+            "project_name": project_name,
+            "statistics": stats if stats is not None else DEFAULT_STATS.copy(),
+        })
+    print(f"[{SERVERS[server]}] 수집 완료: {len(projects)}개")
+    return projects
+
+
+def save_server_json(server: str, project_list: List[Dict], output_dir: Path, timestamp: str) -> Path:
+    """서버 단위 결과 JSON을 저장한다."""
     output_dir.mkdir(parents=True, exist_ok=True)
+    out_path = output_dir / f"project_list_{server}_{timestamp}.json"
+    payload = {
+        "server": server,
+        "server_name": SERVERS[server],
+        "timestamp": timestamp,
+        "total_count": len(project_list),
+        "summary": calc_summary(project_list),
+        "projects": project_list,
+        "project_names": [p["project_name"] for p in project_list],
+    }
+    with out_path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    return out_path
 
+
+def save_all_servers(output_dir: Path, only_server: str = "all") -> Optional[Path]:
+    """전체 또는 단일 서버 결과를 저장한다."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    filename = output_dir / f"project_list_{server}_{timestamp}.json"
-    summary = _calc_summary(project_list)
+    target_servers = [only_server] if only_server != "all" else list(SERVERS.keys())
 
-    with open(filename, 'w', encoding='utf-8') as f:
-        json.dump({
-            "server": server,
-            "server_name": SERVERS[server],
-            "timestamp": timestamp,
-            "total_count": len(project_list),
-            "summary": summary,
-            "projects": project_list,
-            "project_names": [p["project_name"] for p in project_list],
-        }, f, ensure_ascii=False, indent=2)
+    all_servers: Dict[str, Dict] = {}
+    summary_by_server: Dict[str, int] = {}
+    merged_projects: List[Dict] = []
 
-    print(f"[{SERVERS[server]}] 저장 완료: {filename}")
-    return filename
-
-def save_all_servers_project_list():
-    """모든 서버에서 프로젝트 목록을 조회하여 저장"""
-    all_projects = {}
-    summary = {}
-
-    for server in tqdm(SERVERS.keys(), desc="서버 처리", unit="서버", leave=True):
-        project_list = get_project_list_from_server(server)
-        if not project_list:
+    for server in target_servers:
+        projects = get_projects_from_server(server)
+        if not projects:
             continue
+        save_server_json(server, projects, output_dir, timestamp)
 
-        server_summary = _calc_summary(project_list)
-
-        all_projects[server] = {
+        server_summary = calc_summary(projects)
+        all_servers[server] = {
             "server_name": SERVERS[server],
-            "projects": project_list,
-            "project_names": [p["project_name"] for p in project_list],
-            "count": len(project_list),
+            "projects": projects,
+            "project_names": [p["project_name"] for p in projects],
+            "count": len(projects),
             "summary": server_summary,
         }
-        summary[server] = len(project_list)
+        summary_by_server[server] = len(projects)
+        merged_projects.extend(projects)
 
-    # 전체 통합 파일 저장
-    all_project_list = [p for projs in all_projects.values() for p in projs["projects"]]
-    overall_summary = _calc_summary(all_project_list)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    output_dir = Path(current_dir) / OUTPUT_DIR
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if not all_servers:
+        print("저장할 데이터가 없습니다.")
+        return None
 
-    all_filename = output_dir / f"project_list_all_{timestamp}.json"
-    with open(all_filename, 'w', encoding='utf-8') as f:
-        json.dump({
-            "timestamp": timestamp,
-            "servers": all_projects,
-            "summary": {
-                "by_server": summary,
-                "total_projects": sum(summary.values()),
-                **overall_summary,
+    overall_summary = calc_summary(merged_projects)
+    out_path = output_dir / f"project_list_all_{timestamp}.json"
+    with out_path.open("w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "timestamp": timestamp,
+                "servers": all_servers,
+                "summary": {
+                    "by_server": summary_by_server,
+                    "total_projects": sum(summary_by_server.values()),
+                    **overall_summary,
+                },
             },
-        }, f, ensure_ascii=False, indent=2)
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
 
-    print(f"\n전체 통합 파일 저장 완료: {all_filename}")
-    _print_summary(all_projects, summary, overall_summary)
-    return all_filename
+    print_summary(all_servers, summary_by_server, overall_summary)
+    print(f"\n통합 JSON 저장: {out_path}")
+    return out_path
 
 
-def _print_summary(all_projects, summary, overall):
-    """서버별/전체 요약 출력"""
-    print("\n=== 서버별 프로젝트 개수 ===")
+def print_summary(all_servers: Dict[str, Dict], summary: Dict[str, int], overall: Dict) -> None:
+    """서버별/전체 요약을 출력한다."""
+    print("\n=== 서버별 요약 ===")
     for server, count in summary.items():
-        s = all_projects[server]["summary"]
-        print(f"{SERVERS[server]}: {count}개 프로젝트, 전주: {s['total_poles']}개, 미측정: {s['total_not_measured']}, 측정: {s['total_measured']}, "
-              f"1차완료: {s['total_anal1_completed']}(파단 {s['total_anal1_break']}·{s['anal1_break_ratio']}%), "
-              f"2차완료: {s['total_anal2_completed']}(파단 {s['total_anal2_break']}·{s['anal2_break_ratio']}%, 전체대비 {s['overall_anal2_ratio']}%)")
-    print(f"전체: {sum(summary.values())}개 프로젝트 | 전주: {overall['total_poles']} | 미측정: {overall['total_not_measured']} | 측정: {overall['total_measured']} | "
-          f"1차완료: {overall['total_anal1_completed']}(파단 {overall['total_anal1_break']}·{overall['anal1_break_ratio']}%) | "
-          f"2차완료: {overall['total_anal2_completed']}(파단 {overall['total_anal2_break']}·{overall['anal2_break_ratio']}%, 전체대비 {overall['overall_anal2_ratio']}%)")
+        s = all_servers[server]["summary"]
+        print(
+            f"{SERVERS[server]}: 프로젝트 {count}개, 전주 {s['total_poles']}개, "
+            f"1차 {s['total_anal1_completed']}개(파단 {s['total_anal1_break']}개), "
+            f"2차 {s['total_anal2_completed']}개(파단 {s['total_anal2_break']}개)"
+        )
+    print(
+        f"전체: 프로젝트 {sum(summary.values())}개, 전주 {overall['total_poles']}개, "
+        f"1차 {overall['total_anal1_completed']}개, 2차 {overall['total_anal2_completed']}개"
+    )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="프로젝트 목록/통계 조회")
+    parser.add_argument(
+        "--server",
+        default="all",
+        choices=["all", *SERVERS.keys()],
+        help="조회 대상 서버 (기본: all)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=str(DEFAULT_OUTPUT_DIR),
+        help="결과 저장 디렉터리",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    output_dir = Path(args.output_dir)
+    print("=" * 70)
+    print("1단계: 프로젝트 목록/통계 수집 시작")
+    print("=" * 70)
+    save_all_servers(output_dir=output_dir, only_server=args.server)
+    print("\n" + "=" * 70)
+    print("1단계: 완료")
+    print("=" * 70)
+
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("프로젝트 목록 조회 및 저장 시작")
-    print("=" * 60)
-    save_all_servers_project_list()
-    
-    print("\n" + "=" * 60)
-    print("프로젝트 목록 조회 및 저장 완료")
-    print("=" * 60)
-
+    main()

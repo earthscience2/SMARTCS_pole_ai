@@ -16,10 +16,14 @@ else:
     _script_dir = os.path.dirname(os.path.abspath(__file__))
     _project_root = Path(_script_dir).parent
     # 2차 Hard 모델 평가 전용 WSL 스크립트
-    _sh_path = Path(_script_dir) / "evaluate_hard_model_2nd_wsl2.sh"
-    if not _sh_path.exists():
-        _sh_path = _project_root / "make_ai" / "evaluate_hard_model_2nd_wsl2.sh"
-    if _sh_path.exists():
+    _sh_candidates = [
+        Path(_script_dir) / "13. evaluate_hard_model_2nd_wsl2.sh",
+        Path(_script_dir) / "evaluate_hard_model_2nd_wsl2.sh",
+        _project_root / "make_ai" / "13. evaluate_hard_model_2nd_wsl2.sh",
+        _project_root / "make_ai" / "evaluate_hard_model_2nd_wsl2.sh",
+    ]
+    _sh_path = next((p for p in _sh_candidates if p.exists()), None)
+    if _sh_path is not None:
         _abs = _sh_path.resolve()
         _drive = _abs.drive
         _wsl_path = (
@@ -36,6 +40,7 @@ import json
 import pickle
 import re
 import datetime
+import shutil
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
@@ -1126,7 +1131,7 @@ def _process_one_sample_sync(
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Hard 2차(conf) 모델 평가")
     parser.add_argument("--data-dir", default="4. merge_data")
     parser.add_argument("--min-points", type=int, default=200)
     parser.add_argument("--max-points", type=int, default=400)
@@ -1141,10 +1146,31 @@ def main():
     parser.add_argument("--min-box-height-span", type=float, default=0.1, help="최소 박스 height 폭(물리 단위). 0이면 미적용 (기본 0.1)")
     parser.add_argument("--test-only", action="store_true", default=True, help="9. hard_train_data의 test 샘플만 평가 (기본값: True, 전체 데이터 평가하려면 --no-test-only 사용)")
     parser.add_argument("--no-test-only", dest="test_only", action="store_false", help="전체 데이터 평가 (test 필터링 비활성화)")
+    parser.add_argument("--run-dir", type=str, default=None, help="평가할 2차 run 디렉터리")
+    parser.add_argument("--target-overall-best-f1", type=float, default=0.70, help="재학습 기준: overall best_f1")
+    parser.add_argument("--target-overall-auc", type=float, default=0.70, help="재학습 기준: overall AUC")
+    parser.add_argument("--target-overall-separation", type=float, default=0.20, help="재학습 기준: overall separation")
+    parser.add_argument(
+        "--skip-sample-images",
+        action="store_true",
+        help="샘플별 결과 이미지(test_result_img, info 하위 PNG) 생성을 건너뛰어 평가 시간을 단축",
+    )
+    parser.add_argument(
+        "--target-pass-mode",
+        type=str,
+        choices=["all_metrics", "f1_only"],
+        default="all_metrics",
+        help="재학습 판정 모드",
+    )
     args = parser.parse_args()
 
     # 2차 Hard 모델(Conf head) 최근 run 및 해당 1차 Hard 모델 run 정보 로드
-    second_stage_run_dir = _get_latest_second_stage_run(SECOND_STAGE_BASE)
+    if args.run_dir is not None:
+        second_stage_run_dir = Path(args.run_dir).resolve()
+        if not second_stage_run_dir.exists():
+            raise FileNotFoundError(f"--run-dir path does not exist: {second_stage_run_dir}")
+    else:
+        second_stage_run_dir = _get_latest_second_stage_run(SECOND_STAGE_BASE)
     if second_stage_run_dir is None:
         raise FileNotFoundError(f"2nd-stage hard model run not found under: {SECOND_STAGE_BASE}")
 
@@ -1278,13 +1304,14 @@ def main():
             print("GT bbox 로드 (9. hard_train_data run NPY):", len(gt_from_npy), "break samples")
 
     # 평가 결과 디렉토리:
-    #  - 13. evaluate_hard_model_2nd/<timestamp>/test/...  (테스트 데이터 기준 결과)
-    #  - 13. evaluate_hard_model_2nd/<timestamp>/all/...   (전체 데이터 기준 결과)
+    #  - 13. evaluate_hard_model_2nd/<second_stage_run>/test/...  (테스트 데이터 기준 결과)
+    #  - 13. evaluate_hard_model_2nd/<second_stage_run>/all/...   (전체 데이터 기준 결과)
     eval_base = Path(current_dir) / "13. evaluate_hard_model_2nd"
-    eval_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = eval_base / eval_ts
+    out_dir = eval_base / second_stage_run_dir.name
     scope_name = "test" if args.test_only else "all"
     scope_dir = out_dir / scope_name
+    if scope_dir.exists():
+        shutil.rmtree(scope_dir)
 
     images_dir = scope_dir / "info"
     break_dir = images_dir / "break"
@@ -1568,94 +1595,97 @@ def main():
         plt.close()
         print(f"저장: {threshold_sweep_path}")
     
-    # conf bin별 이미지 저장 (전체 샘플)
-    # row 에 _idx(샘플 인덱스)가 있으면 그대로 사용. 경로 매칭 없이 인덱스로 접근하면
-    # Windows에서 캐시 생성 후 WSL에서 실행할 때 csv_path 형식 차이로 매칭 실패하는 문제를 피할 수 있다.
-    # _idx가 없는 경우(기존 run) sample_id로 csv_paths에서 파일명 기준으로 찾는 대체 로직 추가.
-    to_draw = [(cat, r) for cat, list_rows in category_lists.items() for r in list_rows]
-    drawn_count = 0
-    skip_reasons = {"no_idx": 0, "invalid_idx": 0, "not_found": 0, "plot_error": 0}
-    for category, r in tqdm(to_draw, desc="conf bin별 이미지 생성"):
-        idx = r.get("_idx")
-        if idx is None:
-            # _idx가 없으면 sample_id로 csv_paths에서 찾기 (파일명 기준 매칭)
-            sample_id = r.get("sample_id")
-            if not sample_id:
-                skip_reasons["no_idx"] += 1
-                continue
-            idx = None
-            for j, p in enumerate(csv_paths):
-                # csv_path의 파일명에서 _OUT_processed를 제거한 것이 sample_id와 일치하는지 확인
-                fname = Path(p).stem.replace("_OUT_processed", "")
-                if fname == sample_id:
-                    idx = j
-                    break
+    # conf bin별 이미지 저장 (전체 샘플) - 시간 단축을 위해 옵션으로 건너뛸 수 있음
+    if args.skip_sample_images:
+        print("옵션 --skip-sample-images: 샘플별 이미지 생성을 건너뜁니다.")
+    else:
+        # row 에 _idx(샘플 인덱스)가 있으면 그대로 사용. 경로 매칭 없이 인덱스로 접근하면
+        # Windows에서 캐시 생성 후 WSL에서 실행할 때 csv_path 형식 차이로 매칭 실패하는 문제를 피할 수 있다.
+        # _idx가 없는 경우(기존 run) sample_id로 csv_paths에서 파일명 기준으로 찾는 대체 로직 추가.
+        to_draw = [(cat, r) for cat, list_rows in category_lists.items() for r in list_rows]
+        drawn_count = 0
+        skip_reasons = {"no_idx": 0, "invalid_idx": 0, "not_found": 0, "plot_error": 0}
+        for category, r in tqdm(to_draw, desc="conf bin별 이미지 생성"):
+            idx = r.get("_idx")
             if idx is None:
-                skip_reasons["not_found"] += 1
-                continue
-        if idx < 0 or idx >= n_samples:
-            skip_reasons["invalid_idx"] += 1
-            continue
-        csv_path = csv_paths[idx]
-        sample_id = r["sample_id"]
-        meta = metas[idx]
-        label = labels[idx]
-        boxes_by_axis, best_box_by_axis, score_by_axis, top3_by_axis, _, conf_map = _compute_sample_boxes_top3(
-            idx, csv_path, meta, label, preds_by_axis, preds_conf_by_axis,
-            args.min_box_ratio, args.min_box_degree_span, args.min_box_height_span, has_confidence,
-        )
-        label_dir = break_dir if label == 1 else normal_dir
-        boxes_json_path = label_dir / f"{sample_id}_pred_boxes.json"
-        top3_iou_by_axis = None
-        if boxes_json_path.exists():
-            with open(boxes_json_path, "r", encoding="utf-8") as f:
-                boxes_json = json.load(f)
-            top3_iou_by_axis = {}
-            for ax in AXIS_NAMES:
-                if ax not in boxes_json.get("axes", {}):
+                # _idx가 없으면 sample_id로 csv_paths에서 찾기 (파일명 기준 매칭)
+                sample_id = r.get("sample_id")
+                if not sample_id:
+                    skip_reasons["no_idx"] += 1
                     continue
-                top3_iou_by_axis[ax] = [entry.get("iou") for entry in boxes_json["axes"][ax]]
-        # conf bin 폴더: 해당 축만 강조
-        # category 형태: conf_bin_<axis>_<bin_idx> -> 해당 axis의 1순위 박스만 강조
-        if category.startswith("conf_bin_"):
-            parts = category.split("_")
-            if len(parts) == 4 and parts[2] in AXIS_NAMES:
-                axis_from_cat = parts[2]
-                if axis_from_cat in top3_by_axis and top3_by_axis[axis_from_cat]:
-                    highlight_rank_by_axis = {axis_from_cat: 0}
+                idx = None
+                for j, p in enumerate(csv_paths):
+                    # csv_path의 파일명에서 _OUT_processed를 제거한 것이 sample_id와 일치하는지 확인
+                    fname = Path(p).stem.replace("_OUT_processed", "")
+                    if fname == sample_id:
+                        idx = j
+                        break
+                if idx is None:
+                    skip_reasons["not_found"] += 1
+                    continue
+            if idx < 0 or idx >= n_samples:
+                skip_reasons["invalid_idx"] += 1
+                continue
+            csv_path = csv_paths[idx]
+            sample_id = r["sample_id"]
+            meta = metas[idx]
+            label = labels[idx]
+            boxes_by_axis, best_box_by_axis, score_by_axis, top3_by_axis, _, conf_map = _compute_sample_boxes_top3(
+                idx, csv_path, meta, label, preds_by_axis, preds_conf_by_axis,
+                args.min_box_ratio, args.min_box_degree_span, args.min_box_height_span, has_confidence,
+            )
+            label_dir = break_dir if label == 1 else normal_dir
+            boxes_json_path = label_dir / f"{sample_id}_pred_boxes.json"
+            top3_iou_by_axis = None
+            if boxes_json_path.exists():
+                with open(boxes_json_path, "r", encoding="utf-8") as f:
+                    boxes_json = json.load(f)
+                top3_iou_by_axis = {}
+                for ax in AXIS_NAMES:
+                    if ax not in boxes_json.get("axes", {}):
+                        continue
+                    top3_iou_by_axis[ax] = [entry.get("iou") for entry in boxes_json["axes"][ax]]
+            # conf bin 폴더: 해당 축만 강조
+            # category 형태: conf_bin_<axis>_<bin_idx> -> 해당 axis의 1순위 박스만 강조
+            if category.startswith("conf_bin_"):
+                parts = category.split("_")
+                if len(parts) == 4 and parts[2] in AXIS_NAMES:
+                    axis_from_cat = parts[2]
+                    if axis_from_cat in top3_by_axis and top3_by_axis[axis_from_cat]:
+                        highlight_rank_by_axis = {axis_from_cat: 0}
+                    else:
+                        highlight_rank_by_axis = None
                 else:
                     highlight_rank_by_axis = None
             else:
                 highlight_rank_by_axis = None
-        else:
-            highlight_rank_by_axis = None
-        # conf_bin_<axis>_<bin_idx> -> test_result_img/conf_<bin_from>_<bin_to>/<axis>/ 구조로 저장
-        if category.startswith("conf_bin_"):
-            parts = category.split("_")
-            axis_for_dir = parts[2] if len(parts) >= 4 else "x"
+            # conf_bin_<axis>_<bin_idx> -> test_result_img/conf_<bin_from>_<bin_to>/<axis>/ 구조로 저장
+            if category.startswith("conf_bin_"):
+                parts = category.split("_")
+                axis_for_dir = parts[2] if len(parts) >= 4 else "x"
+                try:
+                    bin_idx_for_dir = int(parts[3])
+                except (IndexError, ValueError):
+                    bin_idx_for_dir = 0
+                bin_dir_name = f"conf_{bin_idx_for_dir}_{bin_idx_for_dir + 1}"
+                axis_dir = summary_dir / bin_dir_name / axis_for_dir
+            else:
+                # 예외적으로 다른 카테고리가 생길 경우 이전 방식 유지
+                axis_dir = summary_dir / category
+            out_path = axis_dir / f"{sample_id}_pred_candidates.png"
             try:
-                bin_idx_for_dir = int(parts[3])
-            except (IndexError, ValueError):
-                bin_idx_for_dir = 0
-            bin_dir_name = f"conf_{bin_idx_for_dir}_{bin_idx_for_dir + 1}"
-            axis_dir = summary_dir / bin_dir_name / axis_for_dir
-        else:
-            # 예외적으로 다른 카테고리가 생길 경우 이전 방식 유지
-            axis_dir = summary_dir / category
-        out_path = axis_dir / f"{sample_id}_pred_candidates.png"
-        try:
-            plot_csv_with_boxes(csv_path, boxes_by_axis, best_box_by_axis, score_by_axis, out_path,
-                conf_by_axis=conf_map, draw_candidates=False, confidence_threshold=args.confidence_threshold, use_confidence=has_confidence, top3_by_axis=top3_by_axis,
-                min_box_ratio=args.min_box_ratio, min_box_degree_span=args.min_box_degree_span, min_box_height_span=args.min_box_height_span,
-                highlight_rank_by_axis=highlight_rank_by_axis, top3_iou_by_axis=top3_iou_by_axis, draw_only_highlighted=True)
-            drawn_count += 1
-        except Exception as e:
-            skip_reasons["plot_error"] += 1
-            print(f"경고: 이미지 저장 실패 {out_path}: {e}")
-    if to_draw:
-        print(f"conf bin별 이미지 생성 완료: {drawn_count}건 (축별 x/y/z, conf 0.1 단위 bin, 총 30개 폴더)")
-        if drawn_count == 0:
-            print(f"  디버깅: skip 이유 - no_idx={skip_reasons['no_idx']}, not_found={skip_reasons['not_found']}, invalid_idx={skip_reasons['invalid_idx']}, plot_error={skip_reasons['plot_error']}")
+                plot_csv_with_boxes(csv_path, boxes_by_axis, best_box_by_axis, score_by_axis, out_path,
+                    conf_by_axis=conf_map, draw_candidates=False, confidence_threshold=args.confidence_threshold, use_confidence=has_confidence, top3_by_axis=top3_by_axis,
+                    min_box_ratio=args.min_box_ratio, min_box_degree_span=args.min_box_degree_span, min_box_height_span=args.min_box_height_span,
+                    highlight_rank_by_axis=highlight_rank_by_axis, top3_iou_by_axis=top3_iou_by_axis, draw_only_highlighted=True)
+                drawn_count += 1
+            except Exception as e:
+                skip_reasons["plot_error"] += 1
+                print(f"경고: 이미지 저장 실패 {out_path}: {e}")
+        if to_draw:
+            print(f"conf bin별 이미지 생성 완료: {drawn_count}건 (축별 x/y/z, conf 0.1 단위 bin, 총 30개 폴더)")
+            if drawn_count == 0:
+                print(f"  디버깅: skip 이유 - no_idx={skip_reasons['no_idx']}, not_found={skip_reasons['not_found']}, invalid_idx={skip_reasons['invalid_idx']}, plot_error={skip_reasons['plot_error']}")
 
     # IoU/conf 분포 및 IoU–conf 연관성 그래프 (전체 + 축별 x, y, z 총 4개)
     for ax in [None, "x", "y", "z"]:
@@ -1694,6 +1724,59 @@ def main():
         }
     with open(scope_dir / "evaluation_summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
+
+    overall = metrics.get("overall", {})
+    overall_best_f1 = overall.get("best_f1")
+    overall_auc = overall.get("auc_high_iou")
+    overall_sep = overall.get("separation")
+    has_required = all(v is not None for v in [overall_best_f1, overall_auc, overall_sep])
+    if args.target_pass_mode == "f1_only":
+        overall_pass = (overall_best_f1 is not None) and (overall_best_f1 >= args.target_overall_best_f1)
+    else:
+        overall_pass = (
+            has_required
+            and overall_best_f1 >= args.target_overall_best_f1
+            and overall_auc >= args.target_overall_auc
+            and overall_sep >= args.target_overall_separation
+        )
+
+    weak_axes = sorted(
+        AXIS_NAMES,
+        key=lambda ax: (
+            metrics["by_axis"][ax].get("best_f1") or -1.0,
+            metrics["by_axis"][ax].get("auc_high_iou") or -1.0,
+            metrics["by_axis"][ax].get("separation") or -9999.0,
+        ),
+    )
+    feedback = {
+        "stage": "hard_model_2nd",
+        "evaluation_dir": str(scope_dir),
+        "second_stage_run": second_stage_run_dir.name,
+        "first_stage_run": first_stage_run_dir.name,
+        "pass": bool(overall_pass),
+        "recommended_retrain": bool(not overall_pass),
+        "pass_mode": args.target_pass_mode,
+        "criteria": {
+            "target_overall_best_f1": float(args.target_overall_best_f1),
+            "target_overall_auc": float(args.target_overall_auc),
+            "target_overall_separation": float(args.target_overall_separation),
+        },
+        "actual": {
+            "overall_best_f1": overall_best_f1,
+            "overall_auc_high_iou": overall_auc,
+            "overall_separation": overall_sep,
+        },
+        "weak_axes_order": weak_axes,
+    }
+    feedback_path = scope_dir / "training_feedback.json"
+    with open(feedback_path, "w", encoding="utf-8") as f:
+        json.dump(feedback, f, ensure_ascii=False, indent=2)
+    print("저장:", feedback_path)
+    print(
+        "[feedback] pass={} mode={} overall(best_f1={}, auc={}, separation={})".format(
+            overall_pass, args.target_pass_mode, overall_best_f1, overall_auc, overall_sep
+        )
+    )
 
     # 콘솔에 축별·전체 상관계수 및 지표 출력
     def _fmt(v):

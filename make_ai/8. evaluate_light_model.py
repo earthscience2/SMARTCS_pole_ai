@@ -3,8 +3,10 @@
 import os
 import sys
 import json
+import argparse
 import importlib.util
 import datetime
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +34,22 @@ import sklearn.metrics as sk_metrics
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
+parser = argparse.ArgumentParser(description="라이트 모델 평가")
+parser.add_argument("--run", type=str, default=None, help="7. light_models 하위 run 이름")
+parser.add_argument("--target-precision", type=float, default=0.80, help="재학습 기준 precision")
+parser.add_argument("--target-recall", type=float, default=0.90, help="재학습 기준 recall")
+parser.add_argument("--target-f1", type=float, default=0.84, help="재학습 기준 F1")
+parser.add_argument(
+    "--target-pass-mode",
+    type=str,
+    choices=["all_metrics", "recall_priority"],
+    default="all_metrics",
+    help="재학습 판정 모드",
+)
+parser.add_argument("--best-target-recall", type=float, default=0.90, help="best 모델 선별 기준: 최소 recall")
+parser.add_argument("--best-target-accuracy", type=float, default=0.50, help="best 모델 선별 기준: 최소 accuracy")
+args = parser.parse_args()
+
 print("TF:", tf.__version__)
 print("GPUs:", tf.config.list_physical_devices("GPU"))
 
@@ -55,6 +73,133 @@ def get_latest_light_model_run(models_base: Path):
         return None
     candidates.sort(key=lambda x: x[0], reverse=True)
     return candidates[0]  # (name, dir, best_ckpt_path)
+
+
+def _to_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _rank_key(metrics: dict, target_recall: float, target_accuracy: float):
+    """목표(recall/accuracy) 우선순위 기반 비교 키."""
+    recall = _to_float(metrics.get("recall"))
+    accuracy = _to_float(metrics.get("accuracy"))
+    f1 = _to_float(metrics.get("f1"))
+    meets_target = int(
+        (recall is not None and accuracy is not None and recall >= target_recall and accuracy >= target_accuracy)
+    )
+    recall_gap = (recall - target_recall) if recall is not None else -1e9
+    accuracy_gap = (accuracy - target_accuracy) if accuracy is not None else -1e9
+    return (
+        meets_target,
+        recall_gap,
+        accuracy_gap,
+        recall if recall is not None else -1e9,
+        accuracy if accuracy is not None else -1e9,
+        f1 if f1 is not None else -1e9,
+    )
+
+
+def _extract_candidate_from_report(report_path: Path):
+    try:
+        with open(report_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return None
+
+    model_run = data.get("model_run")
+    cls = data.get("classification", {})
+    metrics = {
+        "accuracy": _to_float(cls.get("accuracy")),
+        "precision": _to_float(cls.get("precision")),
+        "recall": _to_float(cls.get("recall")),
+        "f1": _to_float(cls.get("f1_score")),
+    }
+    if not model_run or metrics["recall"] is None or metrics["f1"] is None:
+        return None
+    if metrics["accuracy"] is None:
+        return None
+
+    return {
+        "model_run": model_run,
+        "metrics": metrics,
+        "report_path": str(report_path),
+        "evaluation_time": data.get("evaluation_time"),
+    }
+
+
+def _collect_best_candidate_from_reports(eval_base_dir: Path, target_recall: float, target_accuracy: float):
+    report_paths = sorted(eval_base_dir.glob("*/evaluation_report.json"))
+    if not report_paths:
+        return None
+
+    best_by_run = {}
+    for report_path in report_paths:
+        candidate = _extract_candidate_from_report(report_path)
+        if candidate is None:
+            continue
+        run_name = candidate["model_run"]
+        prev = best_by_run.get(run_name)
+        if prev is None:
+            best_by_run[run_name] = candidate
+            continue
+        if _rank_key(candidate["metrics"], target_recall, target_accuracy) > _rank_key(prev["metrics"], target_recall, target_accuracy):
+            best_by_run[run_name] = candidate
+
+    if not best_by_run:
+        return None
+
+    return max(best_by_run.values(), key=lambda c: _rank_key(c["metrics"], target_recall, target_accuracy))
+
+
+def _load_current_best_metrics(best_alias_dir: Path):
+    """기존 light_model_best 성능을 읽어서 비교용 metrics 반환."""
+    meta_path = best_alias_dir / "best_model_selection.json"
+    if meta_path.exists():
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            selected = meta.get("selected", {})
+            metrics = selected.get("metrics", {})
+            return {
+                "model_run": selected.get("model_run"),
+                "metrics": {
+                    "accuracy": _to_float(metrics.get("accuracy")),
+                    "precision": _to_float(metrics.get("precision")),
+                    "recall": _to_float(metrics.get("recall")),
+                    "f1": _to_float(metrics.get("f1")),
+                },
+            }
+        except Exception:
+            pass
+
+    # 메타가 없으면 light_model_best 내부 학습 평가 결과로 추론
+    eval_result_path = best_alias_dir / "results" / "evaluation_results.json"
+    if not eval_result_path.exists():
+        return None
+    try:
+        with open(eval_result_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        cls = data.get("classification", {})
+        accuracy = _to_float(cls.get("accuracy"))
+        cm = cls.get("confusion_matrix")
+        if accuracy is None and isinstance(cm, list) and len(cm) == 2 and len(cm[0]) == 2 and len(cm[1]) == 2:
+            total = float(np.sum(cm))
+            if total > 0:
+                accuracy = (float(cm[0][0]) + float(cm[1][1])) / total
+        return {
+            "model_run": data.get("model_run"),
+            "metrics": {
+                "accuracy": accuracy,
+                "precision": _to_float(cls.get("precision")),
+                "recall": _to_float(cls.get("recall")),
+                "f1": _to_float(cls.get("f1_score")),
+            },
+        }
+    except Exception:
+        return None
 
 
 
@@ -157,9 +302,8 @@ def build_test_data_from_merge_and_edit(
 # ============================================================================
 
 models_base = Path(current_dir) / "7. light_models"
-run_name_override = None
-if len(sys.argv) >= 3 and sys.argv[1] == "--run":
-    run_name_override = sys.argv[2]
+run_name_override = args.run
+if run_name_override:
     print(f"지정 run으로 평가: {run_name_override}")
 
 if run_name_override:
@@ -175,12 +319,12 @@ else:
             f"7. light_models 아래에 checkpoints/best.keras 가 있는 run이 없습니다: {models_base}"
         )
     run_name, run_dir, best_ckpt_path = latest
+    print(f"--run 미지정: 최신 run 자동 선택 -> {run_name}")
 results_dir = run_dir / "results"
 config_path = results_dir / "training_config.json"
 # 평가 결과 저장: make_ai/8. evaluate_light_model/<날짜_시분>/
 evaluate_light_model_dir = Path(current_dir) / "8. evaluate_light_model"
-date_str = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-detail_dir = evaluate_light_model_dir / date_str
+detail_dir = evaluate_light_model_dir / run_name
 detail_dir.mkdir(parents=True, exist_ok=True)
 
 merge_dir = Path(current_dir) / "4. merge_data"
@@ -877,6 +1021,107 @@ report_path = detail_dir / "evaluation_report.json"
 with open(report_path, "w", encoding="utf-8") as f:
     json.dump(eval_report, f, ensure_ascii=False, indent=2)
 print(f"저장: {report_path}")
+
+if args.target_pass_mode == "recall_priority":
+    overall_pass = (recall >= args.target_recall) and (f1 >= args.target_f1)
+else:
+    overall_pass = (
+        (precision >= args.target_precision)
+        and (recall >= args.target_recall)
+        and (f1 >= args.target_f1)
+    )
+
+feedback = {
+    "stage": "light_model",
+    "evaluation_dir": str(detail_dir),
+    "model_run": run_name,
+    "pass": bool(overall_pass),
+    "recommended_retrain": bool(not overall_pass),
+    "pass_mode": args.target_pass_mode,
+    "criteria": {
+        "target_precision": float(args.target_precision),
+        "target_recall": float(args.target_recall),
+        "target_f1": float(args.target_f1),
+    },
+    "actual": {
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+        "accuracy": float(acc),
+        "threshold": float(best_th),
+        "fn_count": int(len(fn_indices)),
+    },
+}
+feedback_path = detail_dir / "training_feedback.json"
+with open(feedback_path, "w", encoding="utf-8") as f:
+    json.dump(feedback, f, ensure_ascii=False, indent=2)
+print(f"저장: {feedback_path}")
+print(
+    "[feedback] pass={} mode={} precision={:.4f} recall={:.4f} f1={:.4f}".format(
+        overall_pass, args.target_pass_mode, precision, recall, f1
+    )
+)
+
+# ============================================================================
+# 12-0) 누적 평가 보고서 기준 best 모델 선별 및 light_model_best 갱신
+# ============================================================================
+
+eval_base_dir = Path(current_dir) / "8. evaluate_light_model"
+best_alias_dir = Path(current_dir) / "light_model_best"
+best_candidate = _collect_best_candidate_from_reports(
+    eval_base_dir=eval_base_dir,
+    target_recall=float(args.best_target_recall),
+    target_accuracy=float(args.best_target_accuracy),
+)
+
+if best_candidate is None:
+    print("경고: 누적 evaluation_report.json에서 후보 모델을 찾지 못했습니다. light_model_best 갱신을 건너뜁니다.")
+else:
+    current_best = _load_current_best_metrics(best_alias_dir)
+    should_replace = current_best is None
+    if current_best is not None:
+        should_replace = (
+            _rank_key(best_candidate["metrics"], args.best_target_recall, args.best_target_accuracy)
+            > _rank_key(current_best["metrics"], args.best_target_recall, args.best_target_accuracy)
+        )
+
+    selected_run_dir = models_base / best_candidate["model_run"]
+    if not selected_run_dir.exists():
+        print(f"경고: 선별된 모델 run 디렉터리가 없습니다: {selected_run_dir}")
+    elif should_replace:
+        if best_alias_dir.exists():
+            shutil.rmtree(best_alias_dir)
+        shutil.copytree(selected_run_dir, best_alias_dir)
+        selection_meta = {
+            "updated_at": datetime.datetime.now().isoformat(),
+            "criteria": {
+                "target_recall": float(args.best_target_recall),
+                "target_accuracy": float(args.best_target_accuracy),
+            },
+            "selected": {
+                "model_run": best_candidate["model_run"],
+                "metrics": best_candidate["metrics"],
+                "report_path": best_candidate["report_path"],
+                "evaluation_time": best_candidate.get("evaluation_time"),
+            },
+            "previous": current_best,
+        }
+        with open(best_alias_dir / "best_model_selection.json", "w", encoding="utf-8") as f:
+            json.dump(selection_meta, f, ensure_ascii=False, indent=2)
+        print(
+            "light_model_best 갱신: run={} (recall={:.4f}, accuracy={:.4f}, f1={:.4f})".format(
+                best_candidate["model_run"],
+                best_candidate["metrics"]["recall"],
+                best_candidate["metrics"]["accuracy"],
+                best_candidate["metrics"]["f1"],
+            )
+        )
+    else:
+        print(
+            "light_model_best 유지: 기존 베스트가 더 우수하거나 동일함 "
+            f"(current={current_best.get('model_run') if current_best else None}, "
+            f"candidate={best_candidate['model_run']})"
+        )
 
 
 # ============================================================================

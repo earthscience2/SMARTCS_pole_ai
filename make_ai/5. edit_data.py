@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """이미지를 보면서 ROI(Region of Interest) 영역을 설정하는 GUI 프로그램"""
 
+import argparse
 import os
 import json
 import sys
@@ -2589,8 +2590,15 @@ def copy_confirmed_files_to_edit_data(pole_dir: Path, confirmed_break_info: dict
 
 
 def main():
-    input_dir = os.path.join(current_dir, "4. merge_data/break")
-    
+    parser = argparse.ArgumentParser(description="ROI 편집 GUI 실행")
+    parser.add_argument(
+        "--input-dir",
+        default=os.path.join(current_dir, "4. merge_data", "break"),
+        help="ROI 편집 대상 디렉터리 (기본: 4. merge_data/break)",
+    )
+    args = parser.parse_args()
+    input_dir = args.input_dir
+
     print("=" * 60)
     print("파단 위치 수정 시작")
     print("=" * 60)

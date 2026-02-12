@@ -5,6 +5,7 @@ import sys
 import subprocess
 import datetime
 import json
+import argparse
 from pathlib import Path
 
 # 기본값(Windows): WSL2 실행. --local 이거나 이미 Linux/WSL 이면 이 프로세스에서 로컬 학습
@@ -23,7 +24,7 @@ else:
         _drive = _abs.drive
         _wsl_path = ("/mnt/" + _drive[0].lower() + str(_abs)[len(_drive):].replace("\\", "/")) if _drive else str(_abs).replace("\\", "/")
         print("WSL2에서 학습 실행:", _wsl_path)
-        ret = subprocess.run(["wsl", "bash", _wsl_path], cwd=str(_project_root))
+        ret = subprocess.run(["wsl", "bash", _wsl_path] + sys.argv[1:], cwd=str(_project_root))
         sys.exit(ret.returncode)
     # 스크립트 없으면 로컬 학습 진행
 
@@ -76,8 +77,29 @@ from sklearn.metrics import (
     precision_recall_fscore_support
 )
 
-# ✅ 현재 스크립트 디렉토리를 기준으로 경로 설정
+# 현재 스크립트 디렉토리를 기준으로 경로 설정
 current_dir = os.path.dirname(os.path.abspath(__file__))
+
+parser = argparse.ArgumentParser(description="라이트 모델 학습")
+parser.add_argument("--epochs", type=int, default=100, help="학습 epoch 수")
+parser.add_argument("--batch-size", type=int, default=32, help="배치 크기")
+parser.add_argument("--learning-rate", type=float, default=1e-3, help="Adam 학습률")
+parser.add_argument("--focal-alpha", type=float, default=0.93, help="Focal loss alpha 값")
+parser.add_argument(
+    "--break-class-weight-scale",
+    type=float,
+    default=1.35,
+    help="파단 클래스 가중치 배율",
+)
+parser.add_argument("--run-tag", type=str, default="", help="run 폴더 이름 suffix")
+args = parser.parse_args()
+
+RUNTIME_EPOCHS = int(args.epochs)
+RUNTIME_BATCH = int(args.batch_size)
+RUNTIME_LR = float(args.learning_rate)
+RUNTIME_FOCAL_ALPHA = float(args.focal_alpha)
+RUNTIME_BREAK_WEIGHT_SCALE = float(args.break_class_weight_scale)
+RUNTIME_RUN_TAG = str(args.run_tag).strip()
 
 
 def get_latest_light_train_dir(base: Path):
@@ -243,6 +265,26 @@ print("X:", X.shape, X.dtype, "min/max:", float(X.min()), float(X.max()))
 print("y:", y.shape, y.dtype, "counts:", np.unique(y[:, 0].astype(int), return_counts=True))
 print("X_test:", X_test.shape, "y_test:", y_test.shape)
 
+y_all_cls = y[:, 0].astype(int)
+unique_labels, unique_counts = np.unique(y_all_cls, return_counts=True)
+label_counts = {int(k): int(v) for k, v in zip(unique_labels, unique_counts)}
+
+if label_counts.get(0, 0) == 0 or label_counts.get(1, 0) == 0:
+    raise ValueError(
+        "라이트 모델 학습 데이터에 단일 클래스만 있습니다. "
+        f"현재 라벨 분포: {label_counts}. "
+        f"데이터 run: {data_run_dir}. "
+        "정상(0)과 파단(1)이 모두 포함되도록 "
+        "'make_ai/6. set_light_train_data.py'를 다시 생성하세요."
+    )
+
+if label_counts.get(0, 0) < 2 or label_counts.get(1, 0) < 2:
+    raise ValueError(
+        "라이트 모델 학습 데이터의 클래스별 샘플 수가 너무 적습니다. "
+        f"현재 라벨 분포: {label_counts}. "
+        "각 클래스가 최소 2개 이상이어야 stratified split이 가능합니다."
+    )
+
 
 # ============================================================================
 # 2) Train/Val split
@@ -262,7 +304,7 @@ print("X_val  :", X_val.shape,   "y_val counts  :", np.unique(y_val[:, 0].astype
 
 # 파단(1) 클래스 가중치 배율. 1.0=balanced만 사용, >1 로 올리면 파단 놓침(FN) 감소에 유리
 # 1726(Recall 0.86, FN 7)에서 1.25 사용. 1.5는 1719에서 역효과 → 1.35로 소폭 상향해 FN 추가 감소 유도
-BREAK_CLASS_WEIGHT_SCALE = 1.35
+BREAK_CLASS_WEIGHT_SCALE = RUNTIME_BREAK_WEIGHT_SCALE
 
 classes = np.array([0, 1], dtype=np.int32)
 y_train_cls = y_train[:, 0].astype(np.int32)   # (N,) 0/1만 추출
@@ -278,7 +320,7 @@ print(f"Class weights: 0={cw0:.4f}, 1={cw1:.4f} (break scale={BREAK_CLASS_WEIGHT
 # 4) 데이터셋 생성
 # ============================================================================
 
-BATCH = 32
+BATCH = RUNTIME_BATCH
 AUTOTUNE = tf.data.AUTOTUNE
 
 def make_ds(X, y, training: bool):
@@ -359,13 +401,13 @@ model.summary()
 # ============================================================================
 
 # alpha: 양성(파단) 클래스 가중치. 1726에서 0.92로 Recall 0.86. 0.95는 1719에서 역효과 → 0.93으로 소폭 상향
-FOCAL_ALPHA = 0.93   # 양성(break) 가중치. 클수록 Recall↑, FN↓ (대신 FP 소폭 증가 가능)
+FOCAL_ALPHA = RUNTIME_FOCAL_ALPHA
 FOCAL_GAMMA = 2.0
 
 loss_cls = keras.losses.BinaryFocalCrossentropy(gamma=FOCAL_GAMMA, alpha=FOCAL_ALPHA, from_logits=False)
 
 model.compile(
-    optimizer=keras.optimizers.Adam(1e-3),
+    optimizer=keras.optimizers.Adam(RUNTIME_LR),
     loss=loss_cls,
     metrics=[
         keras.metrics.BinaryAccuracy(name="acc"),
@@ -383,6 +425,8 @@ model.compile(
 
 # 6. light_train_data와 동일한 날짜 형식(YYYYMMDD_HHmm)으로 결과 폴더 생성
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+if RUNTIME_RUN_TAG:
+    timestamp = f"{timestamp}_{RUNTIME_RUN_TAG}"
 run_dir = Path(current_dir) / "7. light_models"
 run_timestamp_dir = run_dir / timestamp
 
@@ -440,6 +484,11 @@ print(f"✅ best_ckpt_path: {best_ckpt_path}")
 print(f"✅ latest_weights: {latest_weights}")
 print(f"✅ tensorboard log_dir: {log_dir}")
 print(f"✅ results_dir: {results_dir}")
+print(
+    f"✅ runtime args: epochs={RUNTIME_EPOCHS}, batch={RUNTIME_BATCH}, "
+    f"lr={RUNTIME_LR}, focal_alpha={RUNTIME_FOCAL_ALPHA}, "
+    f"break_weight_scale={RUNTIME_BREAK_WEIGHT_SCALE}"
+)
 
 
 # ============================================================================
@@ -447,7 +496,7 @@ print(f"✅ results_dir: {results_dir}")
 # ============================================================================
 
 # 학습 하이퍼파라미터 정의
-EPOCHS = 100
+EPOCHS = RUNTIME_EPOCHS
 
 # 학습 시작 전에 조건 저장
 training_config = {
@@ -493,7 +542,7 @@ training_config = {
     },
     "optimizer": {
         "type": "Adam",
-        "learning_rate": 1e-3,
+        "learning_rate": RUNTIME_LR,
     },
     "callbacks": {
         "monitor": MONITOR,

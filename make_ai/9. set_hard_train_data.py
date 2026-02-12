@@ -31,7 +31,7 @@ def load_crop_csv(csv_path: str) -> Optional[pd.DataFrame]:
             return None
         return df
     except Exception as e:
-        print("❌ read_csv failed:", csv_path)
+        print("[ERR] read_csv failed:", csv_path)
         print("   err =", repr(e))
         return None
 

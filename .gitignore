@@ -1,42 +1,104 @@
-# Virtual Environment
+# -----------------------------
+# Python / virtualenv
+# -----------------------------
 venv/
+venv_wsl2/
 env/
 ENV/
-.venv
-.venv_wsl2
-cuda-keyring_1.1-1_all.deb
-venv_wsl2/
-
-# Python 캐시 파일
+.venv/
+.venv_wsl2/
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 
-# Python 패키지 빌드 파일 (대용량)
+# -----------------------------
+# Build artifacts
+# -----------------------------
 *.egg
 *.egg-info/
 dist/
 build/
 
+# -----------------------------
 # Logs
+# -----------------------------
 *.log
-log/
 *.log.*
+log/
 
-# 원본 데이터
+# -----------------------------
+# IDE / OS
+# -----------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# -----------------------------
+# Local config / secrets
+# -----------------------------
+.env
+pole.ini
+*.ini.bak
+poleconf.py
+poledb.py
+mysqldb.py
+
+# -----------------------------
+# Common large files
+# -----------------------------
+*.zip
+*.tar.gz
+*.rar
+*.xlsx
+*.xls
+*.npy
+*.pkl
+*.model
+*.keras
+*.h5
+
+# -----------------------------
+# Test / coverage
+# -----------------------------
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# -----------------------------
+# Patch leftovers
+# -----------------------------
+*.orig
+*.rej
+
+# -----------------------------
+# Raw/processed data (large)
+# -----------------------------
 get_pole_date/raw_data/
 make_ai/test_ai/query_pole_work/3. raw_pole_data/
 make_ai/test_ai/query_pole_work/4. merge_data/
 
-# 데이터 폴더 (대용량 데이터)
-# make_ai 데이터 폴더
+# -----------------------------
+# make_ai pipeline outputs (large)
+# -----------------------------
 make_ai/1. project_info_list/
 make_ai/2. anal_pole_list/
 make_ai/3. raw_pole_data/
 make_ai/4. merge_data/
 make_ai/4. merge_data_old/
+make_ai/4. merge_data_oldd/
 make_ai/5. edit_data/
 make_ai/6. light_train_data/
 make_ai/7. light_models/
@@ -46,74 +108,23 @@ make_ai/10. hard_models_1st/
 make_ai/11. evaluate_hard_model_1st/
 make_ai/12. hard_models_2nd/
 make_ai/13. evaluate_hard_model_2nd/
+make_ai/14. best_model_result_and_mlp_final/
+make_ai/15. make_save_model/
+make_ai/16. test_ai/
 
-# Jupyter Notebook
+# Best model bundles (large)
+make_ai/light_model_best/
+make_ai/hard_model_1st_best/
+make_ai/hard_model_2nd_best/
+
+# Misc generated folders/files
+make_ai/weight_num/export_2nd_eval_to_excel/
+make_ai/vendor_handover_bundle_*/
+make_ai/vendor_handover_bundle_*.zip
+
+# Notebook
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
-# IDE 관련 파일
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS 관련 파일
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# 설정 파일 (민감 정보 포함 가능)
-pole.ini
-poleconf.py
-poledb.py
-mysqldb.py
-.env
-*.ini.bak
-
-# 압축 파일 (대용량)
-*.zip
-*.tar.gz
-*.rar
-
-# Excel 파일 (대용량 데이터)
-*.xlsx
-*.xls
-
-# JSON 데이터 파일 (대용량)
-# make_ai/project_list/*.json
-# make_ai/anal2_pole_list/*.json
-
-# AI 모델 파일 (대용량)
-# 주의: make_ai/6. models/*/*.keras 와 make_ai/6. models/*/*.h5 는 이미 위에서 제외함
-*.pkl
-*.model
-*.keras
-*.h5
-
-# NumPy 배열 파일 (대용량 데이터)
-*.npy
-
-# 테스트 및 커버리지
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.hypothesis/
-
-# 기타
-*.orig
-*.rej
-
-# AI 모델 결과 폴더
-make_ai/hard_model_1st_best/
-make_ai/hard_model_2nd_best/
-make_ai/light_model_best/
-
-make_ai/weight_num/export_2nd_eval_to_excel/
-make_ai\test_ai\query_pole_work\3. raw_pole_data\
-make_ai\test_ai\query_pole_work\4. merge_data\
+# Local temp package
+cuda-keyring_1.1-1_all.deb

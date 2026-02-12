@@ -3,6 +3,7 @@
 """3. raw_pole_data의 OUT 파일들을 x, y, z로 병합·보간하여 통일된 데이터로 생성"""
 
 import os
+import argparse
 import json
 import glob
 import random
@@ -27,90 +28,6 @@ except ImportError:
 # 보간 간격 설정
 HEIGHT_STEP = 0.1  # 높이 보간 간격: 10cm (0.1m)
 DEGREE_STEP = 5.0  # 각도 보간 간격: 5도
-
-# OUT 데이터 각도 범위 (0~360도 전체)
-OUT_DEGREE_MIN = 0.0
-OUT_DEGREE_MAX = 360.0
-
-
-def load_break_info_json(pole_dir):
-    """
-    break_info.json 파일 읽기
-    
-    Args:
-        pole_dir: 전주 디렉토리 경로
-    
-    Returns:
-        dict: break_info.json 내용 또는 None
-    """
-    break_info_file = os.path.join(pole_dir, f"{os.path.basename(pole_dir)}_break_info.json")
-    
-    if not os.path.exists(break_info_file):
-        return None
-    
-    try:
-        with open(break_info_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"  경고: break_info.json 읽기 실패 - {e}")
-        return None
-
-
-def calculate_height_and_degree_for_row(row_idx, total_rows, meas_info):
-    """
-    CSV 파일의 각 행에 대해 높이와 각도를 계산
-    
-    Args:
-        row_idx: 행 인덱스 (0부터 시작)
-        total_rows: 전체 행 수
-        meas_info: 측정 정보 딕셔너리 (stheight, edheight, stdegree, eddegree)
-    
-    Returns:
-        tuple: (height, degrees_list) - degrees_list는 8개 채널의 각도 리스트
-    """
-    stheight = meas_info.get('stheight')
-    edheight = meas_info.get('edheight')
-    stdegree = meas_info.get('stdegree')
-    eddegree = meas_info.get('eddegree')
-    
-    # 높이 계산
-    if total_rows > 1:
-        relative_position = row_idx / (total_rows - 1)
-    else:
-        relative_position = 0.0
-    
-    if edheight != stheight:
-        height = stheight + relative_position * (edheight - stheight)
-    else:
-        height = stheight
-    
-    # 각도 계산 (8개 채널에 대해)
-    if eddegree is None:
-        eddegree = stdegree + 360.0
-    
-    if eddegree < stdegree:
-        angle_range = (360 - stdegree) + eddegree
-    else:
-        angle_range = eddegree - stdegree
-    
-    # 각도 범위가 0이거나 매우 작은 경우 처리
-    if angle_range < 1.0:
-        angle_range = 360.0
-        stdegree = 0.0
-        eddegree = 360.0
-    
-    # 8개 채널의 각도 계산 (등간격)
-    degrees = []
-    for ch_idx in range(8):
-        # 0~1 사이의 상대 위치 (ch1=1/9, ch2=2/9, ..., ch8=8/9)
-        ch_relative = (ch_idx + 1) / 9.0
-        ch_degree = stdegree + ch_relative * angle_range
-        # 0~360 범위로 정규화
-        ch_degree = ch_degree % 360.0
-        degrees.append(ch_degree)
-    
-    return height, degrees
-
 
 def interpolate_data_to_grid(df, meas_info, target_heights, target_degrees):
     """
@@ -201,7 +118,6 @@ def interpolate_data_to_grid(df, meas_info, target_heights, target_degrees):
     
     # 각 목표 높이와 각도 조합에 대해 모든 센서 데이터 보간
     final_data = []
-    from scipy.interpolate import interp1d
     
     # target_heights는 이미 측정 범위(stheight ~ edheight) 내에서만 생성되었으므로
     # 추가 범위 체크는 불필요하지만, 명확성을 위해 주석으로 표시
@@ -739,16 +655,18 @@ def process_pole_directory(pole_dir, output_dir):
 
 def process_all_raw_pole_data(
     raw_data_base_dir: str = "3. raw_pole_data",
-    output_base_dir: str = "4. edit_pole_data",
+    output_base_dir: str = "4. merge_data",
+    normal_ratio: int = 10,
 ):
     """
     raw_pole_data 디렉토리 아래의 파단(break) 데이터를 머지하여 저장하고,
     정상(normal) 데이터는 이미지·파단 정보 없이 CSV만 합성하여
-    파단 데이터 CSV 개수의 10배 수만 랜덤 샘플로 저장한다.
+    파단 데이터 CSV 개수의 normal_ratio배 수만 랜덤 샘플로 저장한다.
     
     Args:
         raw_data_base_dir: 원본 데이터 기본 디렉토리
         output_base_dir: 출력 기본 디렉토리
+        normal_ratio: 정상 샘플 비율(파단 대비 배수)
     """
     raw_data_path = Path(current_dir) / raw_data_base_dir
     
@@ -821,7 +739,7 @@ def process_all_raw_pole_data(
     # 2) 정상(normal) 합성: 이미지·파단 정보는 생성하지 않고, 파단 CSV 개수의 10배만 랜덤 샘플로 저장
     normal_path = raw_data_path / "normal"
     normal_output_path = Path(current_dir) / output_base_dir / "normal"
-    target_normal_count = 10 * total_break_processed
+    target_normal_count = normal_ratio * total_break_processed
     
     if normal_path.exists() and target_normal_count > 0:
         print(f"\n[NORMAL] 정상 데이터 합성 시작 (목표: {target_normal_count}개)")
@@ -867,16 +785,30 @@ def process_all_raw_pole_data(
     print(f"\n전체 처리 완료: {output_base_dir}")
 
 
-if __name__ == "__main__":
+def parse_args():
+    parser = argparse.ArgumentParser(description="raw_pole_data를 merge_data 형식으로 변환")
+    parser.add_argument("--raw-data-dir", default="3. raw_pole_data", help="입력 raw_pole_data 디렉터리")
+    parser.add_argument("--output-dir", default="4. merge_data", help="출력 merge_data 디렉터리")
+    parser.add_argument("--normal-ratio", type=int, default=10, help="정상 샘플 비율(파단 대비 배수)")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
     print("=" * 60)
     print("원본 데이터 처리 시작")
     print("=" * 60)
-    
+
     process_all_raw_pole_data(
-        raw_data_base_dir="3. raw_pole_data",
-        output_base_dir="4. merge_data",
+        raw_data_base_dir=args.raw_data_dir,
+        output_base_dir=args.output_dir,
+        normal_ratio=args.normal_ratio,
     )
-    
+
     print("\n" + "=" * 60)
     print("원본 데이터 처리 완료")
     print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()
