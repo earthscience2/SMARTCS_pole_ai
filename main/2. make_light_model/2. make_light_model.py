@@ -541,6 +541,19 @@ def get_latest_light_train_dir(base: Path):
     return max(valid, key=lambda d: d.name)
 
 
+def load_all_data_from_light_train_run(run_dir: Path):
+    """1. light_train_data/<run> 에서 전처리된 전체 데이터(NPY)를 로드."""
+    if run_dir is None:
+        return None, None
+    data_seq = run_dir / "break_imgs.npy"
+    data_lab = run_dir / "break_labels.npy"
+    if not data_seq.exists() or not data_lab.exists():
+        return None, None
+    X_all = np.load(data_seq).astype(np.float32)
+    y_all = np.load(data_lab).astype(np.float32)
+    return X_all, y_all
+
+
 print("Python:", sys.executable)
 print("TF:", tf.__version__)
 
@@ -1155,16 +1168,7 @@ else:
     print("[EVAL 1/7] 기본 지표 계산")
     print(f"\n{'='*60}\n평가 상세 저장 폴더: {detail_dir}\n{'='*60}")
 
-    X_all, y_all, csv_paths_all = None, None, []
-    merge_dir = DATA_SET_DIR / "4. merge_data"
-    edit_dir = DATA_SET_DIR / "5. edit_data"
-    if merge_dir.exists() and edit_dir.exists():
-        X_all, y_all, csv_paths_all = build_test_data_from_merge_and_edit(
-            merge_data_dir="4. merge_data", edit_data_dir="5. edit_data",
-            min_points=200, max_points=400, sort_by="height", max_normal_samples=5000,
-        )
-        if X_all is not None and len(X_all) > 0:
-            csv_paths_all = csv_paths_all or []
+    X_all, y_all = load_all_data_from_light_train_run(data_run_dir)
 
     print("[EVAL 2/7] 테스트 데이터 요약")
 
@@ -1261,10 +1265,10 @@ else:
     cm_all_norm = cm_all.astype(float)
     cm_all_path = roc_all_path = th_all_path = dist_all_path = tp_tn_all_path = detail_dir / "_.png"
     if X_all is not None and len(X_all) > 0:
-        print("[EVAL 4/7] merge/edit 추가 데이터 평가")
+        print("[EVAL 4/7] light_train_data 전체 데이터 평가")
         y_prob_all = best_model.predict(X_all, batch_size=BATCH, verbose=0).reshape(-1)
         y_pred_all = (y_prob_all >= best_th).astype(int)
-        y_all_cls = y_all.astype(int)
+        y_all_cls = y_all.reshape(-1).astype(int)
         acc_all = accuracy_score(y_all_cls, y_pred_all)
         precision_all = precision_score(y_all_cls, y_pred_all, zero_division=0)
         recall_all = recall_score(y_all_cls, y_pred_all, zero_division=0)
@@ -1314,7 +1318,7 @@ else:
         plt.savefig(th_all_path, dpi=150)
         plt.close()
     else:
-        print("[EVAL 4/7] merge/edit 추가 데이터 없음(스킵)")
+        print("[EVAL 4/7] light_train_data 전체 데이터 없음(스킵)")
 
     misclass_summary = {"false_positive": {"count": len(fp_indices), "indices_sample": fp_indices[:50]}, "false_negative": {"count": len(fn_indices), "indices_sample": fn_indices[:50]}, "true_positive": {"count": len(tp_indices), "indices_sample": tp_indices[:50]}, "true_negative": {"count": len(tn_indices), "indices_sample": tn_indices[:50]}}
     if fp_indices:
@@ -1339,7 +1343,44 @@ else:
         plt.close()
     print("[EVAL 5/7] 평가 리포트/보조 파일 저장")
 
-    eval_report = {"model_run": run_name, "model_path": str(best_ckpt_path), "test_data_source": test_data_source_desc, "all_data_source": "4. merge_data/normal, 5. edit_data/break", "evaluation_time": datetime.datetime.now().isoformat(), "test_samples": n_total, "class_distribution": {"normal": int(n_normal), "break": int(n_break)}, "threshold": float(best_th), "threshold_source": "fixed_threshold", "classification": {"accuracy": float(acc), "precision": float(precision), "recall": float(recall), "f1_score": float(f1), "roc_auc": float(roc_auc), "pr_auc": float(pr_auc), "confusion_matrix": cm.tolist(), "confusion_matrix_normalized": [[float(x) for x in row] for row in cm_norm.tolist()], "all_data_metrics": {"accuracy": float(acc_all), "precision": float(precision_all), "recall": float(recall_all), "f1_score": float(f1_all), "roc_auc": float(roc_auc_all), "pr_auc": float(pr_auc_all), "confusion_matrix": cm_all.tolist(), "confusion_matrix_normalized": [[float(x) for x in row] for row in cm_all_norm.tolist()]}}, "misclassification": misclass_summary, "outputs": {"test_confusion_matrix": str(cm_path), "test_roc_pr_curves": str(roc_path), "threshold_sensitivity": str(th_sens_path)}, "threshold_sensitivity": {"n_break_true": n_break_true, "rows": threshold_sensitivity}}
+    eval_report = {
+        "model_run": run_name,
+        "model_path": str(best_ckpt_path),
+        "test_data_source": test_data_source_desc,
+        "all_data_source": f"1. light_train_data/{data_run_dir.name}/break_imgs.npy",
+        "evaluation_time": datetime.datetime.now().isoformat(),
+        "test_samples": n_total,
+        "class_distribution": {"normal": int(n_normal), "break": int(n_break)},
+        "threshold": float(best_th),
+        "threshold_source": "fixed_threshold",
+        "classification": {
+            "accuracy": float(acc),
+            "precision": float(precision),
+            "recall": float(recall),
+            "f1_score": float(f1),
+            "roc_auc": float(roc_auc),
+            "pr_auc": float(pr_auc),
+            "confusion_matrix": cm.tolist(),
+            "confusion_matrix_normalized": [[float(x) for x in row] for row in cm_norm.tolist()],
+            "all_data_metrics": {
+                "accuracy": float(acc_all),
+                "precision": float(precision_all),
+                "recall": float(recall_all),
+                "f1_score": float(f1_all),
+                "roc_auc": float(roc_auc_all),
+                "pr_auc": float(pr_auc_all),
+                "confusion_matrix": cm_all.tolist(),
+                "confusion_matrix_normalized": [[float(x) for x in row] for row in cm_all_norm.tolist()],
+            },
+        },
+        "misclassification": misclass_summary,
+        "outputs": {
+            "test_confusion_matrix": str(cm_path),
+            "test_roc_pr_curves": str(roc_path),
+            "threshold_sensitivity": str(th_sens_path),
+        },
+        "threshold_sensitivity": {"n_break_true": n_break_true, "rows": threshold_sensitivity},
+    }
     if config_path.exists():
         try:
             with open(config_path, "r", encoding="utf-8") as f:
