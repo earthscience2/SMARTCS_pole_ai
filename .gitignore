@@ -80,8 +80,24 @@ make_ai/test_ai/query_pole_work/3. raw_pole_data/
 make_ai/test_ai/query_pole_work/4. merge_data/
 
 # -----------------------------
-# main pipeline outputs (large)
+# Training data and model outputs (large)
 # -----------------------------
+# Legacy make_ai outputs (still in git history)
+make_ai/*/
+make_ai/5. train_data/
+make_ai/6. light_train_data/
+make_ai/7. light_models/
+make_ai/8. evaluate_light_model/
+make_ai/9. hard_train_data/
+make_ai/10. hard_models_1st/
+make_ai/11. evaluate_hard_model_1st/
+make_ai/12. hard_models_2nd/
+make_ai/13. evaluate_hard_model_2nd/
+make_ai/14. best_model_result_and_mlp_final/
+make_ai/15. make_save_model/
+make_ai/16. test_ai/
+
+# Current main pipeline outputs
 # 1. make_data_set outputs
 main/1. make_data set/1. project_info_list/
 main/1. make_data set/2. anal_pole_list/
