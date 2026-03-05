@@ -18,6 +18,19 @@ import shutil
 import datetime
 import argparse
 import json
+
+# Windows 인코딩 문제 해결
+if os.name == 'nt':  # Windows
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+    # subprocess 인코딩 설정
+    import locale
+    try:
+        locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+    except locale.Error:
+        try:
+            locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+        except locale.Error:
+            pass  # 설정할 수 없으면 무시
 import shlex
 from pathlib import Path
 from typing import Dict, Optional

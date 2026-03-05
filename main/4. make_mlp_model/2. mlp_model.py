@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """MLP Final Decision Model Training with Best Model Management."""
 
 import os
@@ -11,6 +11,19 @@ import json
 import shlex
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
+
+# Windows 인코딩 문제 해결
+if os.name == 'nt':  # Windows
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+    # subprocess 인코딩 설정
+    import locale
+    try:
+        locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+    except locale.Error:
+        try:
+            locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+        except locale.Error:
+            pass  # 설정할 수 없으면 무시
 
 import joblib
 import matplotlib
