@@ -1,0 +1,73 @@
+﻿16. test_ai 계산 과정 안내서
+============================================================
+
+1) 입력 텐서 생성
+------------------------------------------------------------
+- 원본 OUT x/y/z 데이터를 병합 후 전처리
+- 필수 컬럼: height, degree, x_value, y_value, z_value
+- 최종 모델 입력: (N, 304, 19, 3), float32
+
+2) 1차 추론 단계
+------------------------------------------------------------
+- Light 모델: light_prob (파단 확률)
+- Hard2 모델:
+  - conf_x
+  - conf_y
+  - conf_z
+
+3) 하드 통합 점수(hard_score)
+------------------------------------------------------------
+축 가중치 정규화:
+- wx = axis_x / (axis_x + axis_y + axis_z)
+- wy = axis_y / (axis_x + axis_y + axis_z)
+- wz = axis_z / (axis_x + axis_y + axis_z)
+
+계산식:
+- hard_score = wx*conf_x + wy*conf_y + wz*conf_z
+
+4) 라이트-하드 융합 점수(fused_score)
+------------------------------------------------------------
+계산식:
+- fused_score = light*light_prob + hard*hard_score
+
+보조값:
+- abs_gap = |light_prob - hard_score|
+
+5) 최종 MLP 입력 피처(7개)
+------------------------------------------------------------
+1. light_prob
+2. conf_x
+3. conf_y
+4. conf_z
+5. hard_score
+6. fused_score
+7. abs_gap
+
+6) 최종 파단 확률
+------------------------------------------------------------
+- mlp_prob_break = MLP.predict_proba(features)[:, 1]
+
+7) 라벨 판정 규칙
+------------------------------------------------------------
+임계치 로드:
+- suspect_threshold
+- break_threshold
+
+판정:
+- mlp_prob_break >= break_threshold: break
+- suspect_threshold <= mlp_prob_break < break_threshold: suspect
+- mlp_prob_break < suspect_threshold: normal
+
+8) 계산에 사용되는 설정 파일
+------------------------------------------------------------
+- mlp_summary.json
+  - weights.light / weights.hard
+  - weights.axis_x / axis_y / axis_z
+  - thresholds.suspect_threshold / break_threshold
+
+9) 품질 점검 포인트
+------------------------------------------------------------
+- axis 가중치 합(분모) 0 여부 방지
+- threshold 값 범위(0~1) 검증
+- 입력 피처 순서 고정(7개) 검증
+- 모델 패키지와 코드 버전 불일치 여부 점검

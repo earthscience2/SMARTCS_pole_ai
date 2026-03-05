@@ -1,27 +1,57 @@
 import logging
 import logging.handlers as handlers
 import os
+from typing import Any, Dict
 
-logger = None
-default_logger_name = 'pole'
-log_dir = './log'
+_LOGGERS: Dict[str, logging.Logger] = {}
+_DEFAULT_LOGGER_NAME = "pole"
+_LOG_DIR = "./log"
+_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+STANDARD_LOG_LEVELS = ("INFO", "WARN", "ERROR")
+STANDARD_LOG_KEYWORDS = {
+    "APP_START",
+    "APP_END",
+    "DATA_LOAD",
+    "DATA_SAVE",
+    "MODEL_SELECT",
+    "MODEL_TRAIN",
+    "MODEL_EVAL",
+    "EVAL_STAGE",
+    "MODEL_EXPORT",
+    "DB_CONNECT",
+    "DB_QUERY",
+    "FILE_IO",
+}
+DEFAULT_LOG_KEYWORD = "GENERAL"
+
+
+def _normalize_name(name=None) -> str:
+    if name is None or str(name).strip() == "":
+        return _DEFAULT_LOGGER_NAME
+    return str(name).strip()
+
 
 def make_logger(name=None):
-    logger = logging.getLogger(name)
-    filename = default_logger_name + '.log'
-    if name is not None:
-        filename = name + '.log'
-    filename = os.path.join(log_dir, filename)
+    logger_name = _normalize_name(name)
+    logger = logging.getLogger(logger_name)
 
-    os.makedirs(log_dir, exist_ok=True)
+    if logger.handlers:
+        return logger
 
+    os.makedirs(_LOG_DIR, exist_ok=True)
     logger.setLevel(logging.INFO)
+    logger.propagate = False
 
-    formatter = logging.Formatter("%(asctime)s %(levelname)s - %(message)s")
+    formatter = logging.Formatter(_FORMAT)
 
     console = logging.StreamHandler()
-    # file_handler = logging.FileHandler(filename=filename)
-    file_handler = handlers.TimedRotatingFileHandler(filename=filename, when='D', interval=1, backupCount=7)
+    file_handler = handlers.TimedRotatingFileHandler(
+        filename=os.path.join(_LOG_DIR, f"{logger_name}.log"),
+        when="D",
+        interval=1,
+        backupCount=7,
+        encoding="utf-8",
+    )
 
     console.setLevel(logging.INFO)
     file_handler.setLevel(logging.INFO)
@@ -31,13 +61,45 @@ def make_logger(name=None):
 
     logger.addHandler(console)
     logger.addHandler(file_handler)
-
     return logger
+
 
 def get_logger(name=None):
-    global logger
+    logger_name = _normalize_name(name)
+    if logger_name not in _LOGGERS:
+        _LOGGERS[logger_name] = make_logger(logger_name)
+    return _LOGGERS[logger_name]
 
-    if logger is None:
-        logger = make_logger(name)
 
-    return logger
+def normalize_level(level: str) -> str:
+    text = (level or "INFO").upper().strip()
+    if text == "WARNING":
+        text = "WARN"
+    return text if text in STANDARD_LOG_LEVELS else "INFO"
+
+
+def normalize_keyword(keyword: str) -> str:
+    text = (keyword or DEFAULT_LOG_KEYWORD).upper().strip()
+    if not text:
+        return DEFAULT_LOG_KEYWORD
+    return text if text in STANDARD_LOG_KEYWORDS else DEFAULT_LOG_KEYWORD
+
+
+def format_event_message(keyword: str, message: str, **fields: Any) -> str:
+    normalized_keyword = normalize_keyword(keyword)
+    base = f"[{normalized_keyword}] {message}"
+    if not fields:
+        return base
+    field_text = " ".join(f"{k}={v}" for k, v in sorted(fields.items()))
+    return f"{base} | {field_text}"
+
+
+def log_event(logger_obj: logging.Logger, level: str, keyword: str, message: str, **fields: Any) -> None:
+    normalized_level = normalize_level(level)
+    event_message = format_event_message(keyword, message, **fields)
+    if normalized_level == "ERROR":
+        logger_obj.error(event_message)
+    elif normalized_level == "WARN":
+        logger_obj.warning(event_message)
+    else:
+        logger_obj.info(event_message)

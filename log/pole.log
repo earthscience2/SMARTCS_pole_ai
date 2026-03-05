@@ -1,2 +1,16 @@
-2026-02-12 23:54:33,685 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
-2026-02-13 00:15:18,561 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-03-05 10:19:10,539 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-03-05 10:20:18,458 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-03-05 10:22:19,482 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-03-05 10:23:01,304 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-03-05 10:25:54,187 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-03-05 10:27:20,698 INFO - mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-03-05 10:27:55,160 INFO - mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-03-05 10:28:41,539 INFO - mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-03-05 16:40:02,862 | INFO | pole | mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-03-05 16:40:35,438 | INFO | pole | mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-03-05 16:42:36,052 | INFO | pole | mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-03-05 16:43:33,766 | INFO | pole | mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-03-05 16:46:02,416 | INFO | pole | mysql) host=210.105.85.3 db_name=polediagdb port=3306
+2026-03-05 16:47:29,156 | INFO | pole | mysql) host=smartpole-is.iptime.org db_name=polediagdb port=33306
+2026-03-05 16:48:01,664 | INFO | pole | mysql) host=smartpole-kh.iptime.org db_name=polediagdb port=33306
+2026-03-05 16:48:50,147 | INFO | pole | mysql) host=210.105.85.3 db_name=polediagdb port=3306
