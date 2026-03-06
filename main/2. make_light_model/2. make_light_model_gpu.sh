@@ -18,7 +18,7 @@ else
   exit 1
 fi
 
-echo "GPU check..."
+echo "[정보] GPU 환경 확인"
 if ! python3 -c "import tensorflow as tf; print('TF:', tf.__version__); print('GPU:', tf.config.list_physical_devices('GPU'))" 2>/dev/null; then
   echo ""
   echo "오류: tensorflow가 현재 가상환경에 설치되어 있지 않습니다."
@@ -36,15 +36,10 @@ LR_BASE="${LIGHT_LR:-0.001}"
 LR_DECAY="${LIGHT_LR_DECAY:-0.9}"
 FOCAL_ALPHA_SCHEDULE_STR="${LIGHT_FOCAL_ALPHA_SCHEDULE:-0.93 0.95 0.97}"
 BREAK_WEIGHT_SCALE_SCHEDULE_STR="${LIGHT_BREAK_WEIGHT_SCALE_SCHEDULE:-1.35 1.45 1.55}"
-TARGET_PRECISION="${LIGHT_TARGET_PRECISION:-0.80}"
-TARGET_RECALL="${LIGHT_TARGET_RECALL:-0.90}"
-TARGET_F1="${LIGHT_TARGET_F1:-0.84}"
-PASS_MODE="${LIGHT_PASS_MODE:-all_metrics}"
-
 read -r -a FOCAL_ALPHA_SCHEDULE <<< "$FOCAL_ALPHA_SCHEDULE_STR"
 read -r -a BREAK_WEIGHT_SCALE_SCHEDULE <<< "$BREAK_WEIGHT_SCALE_SCHEDULE_STR"
 if [ "${#FOCAL_ALPHA_SCHEDULE[@]}" -eq 0 ] || [ "${#BREAK_WEIGHT_SCALE_SCHEDULE[@]}" -eq 0 ]; then
-  echo "Schedule variables are empty."
+  echo "오류: 스케줄 변수(LIGHT_FOCAL_ALPHA_SCHEDULE, LIGHT_BREAK_WEIGHT_SCALE_SCHEDULE)가 비어 있습니다."
   exit 1
 fi
 
@@ -64,17 +59,13 @@ round_idx = ${round} - 1
 print(f"{base * (decay ** round_idx):.8f}")
 PY
 )"
-  echo "[Round ${round}/${MAX_ROUNDS}] Train + Evaluate (epochs=${epochs}, batch=${BATCH_SIZE}, lr=${lr}, alpha=${focal_alpha}, break_w=${break_weight_scale})"
+  echo "[정보][Round ${round}/${MAX_ROUNDS}] 학습/평가 실행 (epochs=${epochs}, batch=${BATCH_SIZE}, lr=${lr}, alpha=${focal_alpha}, break_w=${break_weight_scale})"
   python3 "main/2. make_light_model/2. make_light_model.py" --local \
     --epochs "${epochs}" \
     --batch-size "${BATCH_SIZE}" \
     --learning-rate "${lr}" \
     --focal-alpha "${focal_alpha}" \
-    --break-class-weight-scale "${break_weight_scale}" \
-    --target-precision "${TARGET_PRECISION}" \
-    --target-recall "${TARGET_RECALL}" \
-    --target-f1 "${TARGET_F1}" \
-    --target-pass-mode "${PASS_MODE}"
+    --break-class-weight-scale "${break_weight_scale}"
 
   LATEST_RUN_NAME="$(python3 - <<'PY'
 from pathlib import Path
@@ -84,19 +75,19 @@ print(max(runs, key=lambda d: d.name).name if runs else '')
 PY
 )"
   if [ -z "$LATEST_RUN_NAME" ]; then
-    echo "No trained run found under main/2. make_light_model/2. light_models"
+    echo "오류: main/2. make_light_model/2. light_models 아래에서 학습 완료 run을 찾지 못했습니다."
     exit 1
   fi
 
   # 평가 결과는 2. light_models/<run>/evaluation/ 에 저장됨
   FEEDBACK_PATH="main/2. make_light_model/2. light_models/${LATEST_RUN_NAME}/evaluation/training_feedback.json"
   if [ ! -f "$FEEDBACK_PATH" ]; then
-    echo "training_feedback.json not found: $FEEDBACK_PATH"
+    echo "오류: training_feedback.json 파일이 없습니다: $FEEDBACK_PATH"
     exit 1
   fi
   FEEDBACK_PATH="$(cd "$(dirname "$FEEDBACK_PATH")" && pwd)/$(basename "$FEEDBACK_PATH")"
   if [ -z "$FEEDBACK_PATH" ]; then
-    echo "training_feedback.json not found after light evaluation."
+    echo "오류: 라이트 모델 평가 후 training_feedback.json 경로 확인에 실패했습니다."
     exit 1
   fi
 
@@ -109,7 +100,7 @@ PY
 )"
 
   if [ "$PASSED" = "1" ]; then
-    echo "[Round ${round}] PASS -> stop retraining loop."
+    echo "[정보][Round ${round}] 목표 성능 충족(PASS)으로 루프를 종료합니다."
     python3 - "$LATEST_RUN_NAME" <<'PY'
 import shutil
 import sys
@@ -126,15 +117,15 @@ PY
   fi
 
   if [ "${round}" -lt "${MAX_ROUNDS}" ]; then
-    echo "[Round ${round}] FAIL -> continue retraining."
+    echo "[정보][Round ${round}] 목표 미달(FAIL)로 다음 라운드를 진행합니다."
   else
-    echo "[Round ${round}] FAIL -> stop (no retrain by default; set LIGHT_MAX_ROUNDS>1 to enable loop)."
+    echo "[정보][Round ${round}] 목표 미달(FAIL)이며 최대 라운드 도달로 종료합니다."
   fi
 done
 
 if [ "$PASSED" != "1" ]; then
-  echo "Light model loop finished without meeting targets."
+  echo "라이트 모델 루프가 목표 성능에 도달하지 못한 채 종료되었습니다."
   exit 2
 fi
 
-echo "Light model loop complete."
+echo "라이트 모델 루프가 정상 완료되었습니다."

@@ -185,13 +185,14 @@ def process_category(
 ) -> int:
     """카테고리(break/normal)별 데이터를 수집한다."""
     expected_breakstate = "B" if category == "break" else "N"
+    category_label = "파단" if category == "break" else "정상"
     collected_normal = already_saved_normal
 
     for server, server_payload in servers_data.items():
         if server not in SERVERS:
             continue
 
-        print(f"\n[{SERVERS[server]}] {category} 수집 시작")
+        print(f"\n[정보][{SERVERS[server]}] {category_label} 데이터 수집 시작")
         PDB.poledb_init(server)
         projects = server_payload.get("projects", {})
         for project_name, project_info in projects.items():
@@ -352,9 +353,9 @@ def main() -> None:
     )
 
     print("\n수집 완료")
-    print(f"  break 전주: {total_break}")
-    print(f"  normal 전주: {total_normal}")
-    print(f"  summary: {summary_path}")
+    print(f"  파단 전주: {total_break}")
+    print(f"  정상 전주: {total_normal}")
+    print(f"  요약 파일: {summary_path}")
     print("=" * 70)
 
 

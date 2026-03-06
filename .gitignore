@@ -1,25 +1,18 @@
-# -----------------------------
 # Python / virtualenv
-# -----------------------------
 venv/
 venv_wsl2/
 venv_gpu/
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
 .Python
 
-# -----------------------------
 # Logs
-# -----------------------------
 *.log
 *.log.*
 log/
 
-# -----------------------------
 # IDE / OS
-# -----------------------------
 .vscode/
 .idea/
 *.swp
@@ -33,19 +26,34 @@ log/
 ehthumbs.db
 Thumbs.db
 
-# -----------------------------
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Notebook
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Patch leftovers
+*.orig
+*.rej
+
 # Local config / secrets
-# -----------------------------
 .env
+.env.local
+.env.production
+.env.staging
 pole.ini
 *.ini.bak
 poleconf.py
 poledb.py
 mysqldb.py
+config/poleconf.py
 
-# -----------------------------
-# Common large files
-# -----------------------------
+# Common large artifacts
 *.zip
 *.tar.gz
 *.rar
@@ -56,34 +64,11 @@ mysqldb.py
 *.model
 *.keras
 *.h5
+*.weights
+*.joblib
+*.sav
 
-# -----------------------------
-# Test / coverage
-# -----------------------------
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.hypothesis/
-
-# -----------------------------
-# Patch leftovers
-# -----------------------------
-*.orig
-*.rej
-
-# -----------------------------
-# Raw/processed data (large)
-# -----------------------------
-get_pole_date/raw_data/
-make_ai/test_ai/query_pole_work/3. raw_pole_data/
-make_ai/test_ai/query_pole_work/4. merge_data/
-
-# -----------------------------
-# Training data and model outputs (large)
-# -----------------------------
-# Legacy make_ai outputs (still in git history)
-make_ai/*/
+# Legacy generated data (make_ai)
 make_ai/5. train_data/
 make_ai/6. light_train_data/
 make_ai/7. light_models/
@@ -96,62 +81,32 @@ make_ai/13. evaluate_hard_model_2nd/
 make_ai/14. best_model_result_and_mlp_final/
 make_ai/15. make_save_model/
 make_ai/16. test_ai/
+make_ai/test_ai/query_pole_work/3. raw_pole_data/
+make_ai/test_ai/query_pole_work/4. merge_data/
 
-# Current main pipeline outputs
-# 1. make_data_set outputs
+# Current pipeline outputs (main)
 main/1. make_data set/1. project_info_list/
 main/1. make_data set/2. anal_pole_list/
 main/1. make_data set/3. raw_pole_data/
 main/1. make_data set/4. merge_data/
 main/1. make_data set/5. edit_data/
-
-# 2. make_light_model outputs
 main/2. make_light_model/1. light_train_data/
 main/2. make_light_model/2. light_models/
 main/2. make_light_model/best_light_model/
-
-# 3. make_hard_model outputs
 main/3. make_hard_model/1. hard_train_data/
 main/3. make_hard_model/2. hard_models_1st/
 main/3. make_hard_model/3. hard_models_2nd/
 main/3. make_hard_model/best_hard_model_1st/
 main/3. make_hard_model/best_hard_model_2nd/
-
-# 4. make_mlp_model outputs
 main/4. make_mlp_model/1. mlp_train_data/
 main/4. make_mlp_model/2. mlp_models/
 main/4. make_mlp_model/best_model/
-
-# Best model bundles (large)
 main/best_model/
-
-# Misc generated folders/files
 main/__pycache__/
 main/*/__pycache__/
 
-# Configuration files with sensitive information
-config/poleconf.py
-
-# Database credentials and connection files
-*.env
-*.env.local
-*.env.production
-*.env.staging
-*credentials*
-*secret*
-*password*
-
-# Large model files
-*.h5
-*.pkl
-*.model
-*.weights
-*.joblib
-*.sav
-
-# Notebook
-.ipynb_checkpoints/
-*.ipynb_checkpoints
+# Other generated data
+get_pole_date/raw_data/
 
 # Local temp package
 cuda-keyring_1.1-1_all.deb

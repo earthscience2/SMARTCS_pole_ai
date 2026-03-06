@@ -119,16 +119,15 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="processed CSV를 2D 등고선 이미지로 변환")
     parser.add_argument("csv_file", help="입력 CSV 경로")
     parser.add_argument("--output-file", default=None, help="출력 PNG 경로")
-    parser.add_argument("--break-info-file", default=None, help="호환용 인자(사용하지 않음)")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    out = plot_csv_2d(args.csv_file, args.output_file, args.break_info_file)
+    out = plot_csv_2d(args.csv_file, args.output_file)
     if out is None:
         raise SystemExit(1)
-    print(f"saved: {out}")
+    print(f"[정보] 이미지 저장 완료: {out}")
 
 
 if __name__ == "__main__":

@@ -22,8 +22,15 @@ import json
 # Windows 인코딩 문제 해결
 if os.name == 'nt':  # Windows
     os.environ['PYTHONIOENCODING'] = 'utf-8'
-    os.environ['PYTHONUTF8'] = '1'
-import shlex
+    # subprocess 인코딩 설정
+    import locale
+    try:
+        locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+    except locale.Error:
+        try:
+            locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+        except locale.Error:
+            pass  # 설정할 수 없으면 무시
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -36,23 +43,12 @@ from logger import get_logger, log_event
 LOGGER = get_logger("train_hard_model_2nd")
 
 
-def _normalize_log_message(text: str) -> str:
-    if not text:
-        return text
-    if "?" in text and any(ord(ch) > 127 for ch in text):
-        ascii_only = "".join(ch if ord(ch) < 128 else " " for ch in text)
-        ascii_only = " ".join(ascii_only.split())
-        return f"[legacy-text-normalized] {ascii_only}" if ascii_only else "[legacy-text-normalized]"
-    return text
-
-
 def _log_print(*args, **kwargs):
     sep = kwargs.get("sep", " ")
     text = sep.join(str(a) for a in args)
-    normalized = _normalize_log_message(text)
-    if not normalized:
+    if not text:
         return
-    for line in normalized.splitlines() or [""]:
+    for line in text.splitlines() or [""]:
         log_event(LOGGER, "INFO", "GENERAL", line)
 
 
@@ -74,8 +70,14 @@ def try_wsl2_gpu_script():
     
     try:
         # WSL2가 설치되어 있는지 확인
-        wsl_check = subprocess.run(["wsl", "--status"], 
-                                 capture_output=True, text=True, timeout=10)
+        wsl_check = subprocess.run(
+            ["wsl", "--status"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
         if wsl_check.returncode != 0:
             print("WSL2가 설치되어 있지 않거나 실행할 수 없습니다.")
             return False
@@ -91,10 +93,10 @@ def try_wsl2_gpu_script():
         
         # 현재 스크립트의 모든 인수를 전달 (--local, --cpu 제외)
         filtered_args = [a for a in sys.argv[1:] if a not in ["--local", "--cpu"]]
-        arg_str = " ".join(shlex.quote(a) for a in filtered_args)
-        cmd = f"bash {shlex.quote(_wsl_path)} {arg_str}".strip()
-        
-        ret = subprocess.run(["wsl", "bash", "-lc", cmd], cwd=str(_project_root))
+        ret = subprocess.run(
+            ["wsl", "bash", _wsl_path] + filtered_args,
+            cwd=str(_project_root),
+        )
         
         if ret.returncode == 0:
             print("=" * 60)
@@ -141,11 +143,14 @@ if not _run_local and not _force_cpu:
 
 # CPU 모드로 계속 진행
 if _run_local:
-    print("로컬 모드: CPU로 실행합니다")
+    print("로컬 모드: WSL launcher를 건너뛰고 현재 환경에서 실행합니다")
 elif _force_cpu:
     print("CPU 강제 모드: GPU 스크립트를 건너뛰고 CPU로 실행합니다")
 else:
-    print("CPU 모드로 fallback하여 실행합니다")
+    if sys.platform == "win32":
+        print("CPU 모드로 fallback하여 실행합니다")
+    else:
+        print("비-Windows 런타임: 현재 환경에서 계속 실행합니다 (GPU 가능 시 사용)")
 
 import numpy as np
 import tensorflow as tf
@@ -154,7 +159,7 @@ from tensorflow.keras import layers
 from sklearn.metrics import roc_auc_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import train_test_split
 
-#  ?
+# 기본 설정
 BASE_SEED = 42
 BATCH = 32
 EPOCHS = 220
@@ -162,13 +167,13 @@ CONF_LR = 1e-3
 P = 3
 
 # ============================================================================
-# ???? ( ???? ?)
+# 사용자 옵션 (학습 파라미터)
 # ============================================================================
 USER_OPTIONS = {
     "epochs": 220,
     "batch_size": 32,
     "learning_rate": 1e-3,
-    "target_overall_best_f1": 0.70,
+    "target_overall_best_f1": 0.78,
     "target_overall_auc": 0.70,
     "target_overall_separation": 0.20,
     "target_pass_mode": "all_metrics",  # all_metrics | f1_only
@@ -190,17 +195,17 @@ DATA_FALLBACK_ROOT = CURRENT_DIR / "5. train_data"
 first_stage_run_dir = None
 ckpt_dir = None
 
-# GPU ?
+# GPU 확인
 _gpus = tf.config.list_physical_devices("GPU")
 if _gpus:
     try:
         for _g in _gpus:
             tf.config.experimental.set_memory_growth(_g, True)
-        print("GPU ?:", [g.name for g in _gpus])
+        print("GPU 목록:", [g.name for g in _gpus])
     except RuntimeError as e:
-        print("GPU ? ?:", e)
+        print("GPU 설정 오류:", e)
 else:
-    print("GPU ?, CPU ?")
+    print("GPU 없음, CPU 사용")
 
 
 def get_latest_hard_train_dir(base: Path):
@@ -276,7 +281,7 @@ def build_conf_model_for_axis(axis: str, base_model: keras.Model, input_shape):
     try:
         gap_layer = base_model.get_layer(gap_layer_name)
     except ValueError as e:
-        raise ValueError(f"GAP ??? ? ??? {gap_layer_name}") from e
+        raise ValueError(f"GAP 레이어를 찾을 수 없습니다: {gap_layer_name}") from e
 
     feature_model = keras.Model(base_model.input, gap_layer.output, name=f"{axis}_feature_model")
     feature_model.trainable = False
@@ -320,7 +325,7 @@ def train_conf_for_axis(axis: str, roi_idx: int, X, y, K: int, conf_ckpt_dir: Pa
 
     best_path = ckpt_dir / f"best_{axis}.keras"
     if not best_path.exists():
-        raise FileNotFoundError(f"best  ?: {best_path}")
+        raise FileNotFoundError(f"best 체크포인트 없음: {best_path}")
 
     print("Loading base model:", best_path)
     base_model = keras.models.load_model(str(best_path), compile=False)
@@ -329,11 +334,16 @@ def train_conf_for_axis(axis: str, roi_idx: int, X, y, K: int, conf_ckpt_dir: Pa
     labels = y[:, 0].astype(int)
     mask_break = labels == 1
     if not np.any(mask_break):
-        raise RuntimeError("break(label=1) ???? conf ???????")
+        raise RuntimeError("break(label=1) 샘플이 없어 conf 학습 불가")
 
     X_break = X[mask_break]
     y_break = y[mask_break]
-    print(f"break ?: {X_break.shape[0]} / ? {X.shape[0]}")
+    print(f"break 개수: {X_break.shape[0]} / 전체 {X.shape[0]}")
+    if X_break.shape[0] < 2:
+        raise RuntimeError(
+            f"axis={axis}: break 샘플이 {X_break.shape[0]}개라 train/val 분할이 불가합니다. "
+            "hard_train_data를 다시 생성해 샘플 수를 늘려주세요."
+        )
 
     print(f"IoU 湲곕컲 confidence target 怨꾩궛(axis={axis})...")
     y_conf_full = compute_conf_targets_for_axis(base_model, X_break, y_break, axis=axis, roi_idx=roi_idx, K=K)
@@ -343,7 +353,7 @@ def train_conf_for_axis(axis: str, roi_idx: int, X, y, K: int, conf_ckpt_dir: Pa
         indices,
         test_size=0.2,
         random_state=BASE_SEED,
-        stratify=y_break[:, 0].astype(int),
+        stratify=None,
     )
 
     X_train, X_val = X_break[train_idx], X_break[val_idx]
@@ -901,13 +911,21 @@ def _update_best_hard2_model(models_base: Path, best_alias_dir: Path, target_f1:
             history_path=history_path,
             reason="후보 모델이 현재 베스트보다 우수",
         )
-        print(
-            f"best_hard_model_2nd 갱신: run={candidate['model_run']} "
-            f"(f1={candidate['metrics']['overall_best_f1']:.4f}, "
-            f"auc={candidate['metrics']['overall_auc_high_iou']:.4f}, sep={candidate['metrics']['overall_separation']:.4f}) "
-            f"| saved_to: {dst_run_dir} | history: {history_path}"
-        )
-        print("베스트 모델이 새로 등록되었습니다.")
+        print("\n" + "=" * 80)
+        print("🎉 베스트 모델 교체 성공!")
+        print("=" * 80)
+        print(f"✅ 새로운 베스트 모델: {candidate['model_run']}")
+        print(f"   - F1 Score: {candidate['metrics']['overall_best_f1']:.4f}")
+        print(f"   - AUC (High IoU): {candidate['metrics']['overall_auc_high_iou']:.4f}")
+        print(f"   - Separation: {candidate['metrics']['overall_separation']:.4f}")
+        if current_best:
+            print(f"\n📊 이전 베스트 모델: {current_best.get('model_run', 'N/A')}")
+            print(f"   - F1 Score: {current_best['metrics'].get('overall_best_f1', 0):.4f} → {candidate['metrics']['overall_best_f1']:.4f}")
+            print(f"   - AUC (High IoU): {current_best['metrics'].get('overall_auc_high_iou', 0):.4f} → {candidate['metrics']['overall_auc_high_iou']:.4f}")
+            print(f"   - Separation: {current_best['metrics'].get('overall_separation', 0):.4f} → {candidate['metrics']['overall_separation']:.4f}")
+        print(f"\n💾 저장 위치: {dst_run_dir}")
+        print(f"📝 히스토리: {history_path}")
+        print("=" * 80 + "\n")
     else:
         history_path = _append_best_hard2_history(
             models_base,
@@ -929,61 +947,70 @@ def _update_best_hard2_model(models_base: Path, best_alias_dir: Path, target_f1:
             history_path=history_path,
             reason="현재 베스트 모델 유지",
         )
-        print(
-            f"best_hard_model_2nd 유지: current={current_best.get('model_run') if current_best else 'None'} "
-            f"candidate={candidate['model_run']} | history: {history_path}"
-        )
-        print("이번 모델은 기존 베스트 모델을 넘지 못했습니다.")
+        print("\n" + "=" * 80)
+        print("ℹ️  베스트 모델 유지")
+        print("=" * 80)
+        print(f"🏆 현재 베스트 모델: {current_best.get('model_run', 'N/A')}")
+        print(f"   - F1 Score: {current_best['metrics'].get('overall_best_f1', 0):.4f}")
+        print(f"   - AUC (High IoU): {current_best['metrics'].get('overall_auc_high_iou', 0):.4f}")
+        print(f"   - Separation: {current_best['metrics'].get('overall_separation', 0):.4f}")
+        print(f"\n🔍 후보 모델: {candidate['model_run']}")
+        print(f"   - F1 Score: {candidate['metrics']['overall_best_f1']:.4f}")
+        print(f"   - AUC (High IoU): {candidate['metrics']['overall_auc_high_iou']:.4f}")
+        print(f"   - Separation: {candidate['metrics']['overall_separation']:.4f}")
+        print(f"\n❌ 결과: 후보 모델이 현재 베스트 모델을 넘지 못했습니다.")
+        print(f"📝 히스토리: {history_path}")
+        print("=" * 80 + "\n")
 
 
 def main():
     global BATCH, EPOCHS, CONF_LR, first_stage_run_dir, ckpt_dir
 
-    parser = argparse.ArgumentParser(description="Hard 2?conf head)  ?")
-    parser.add_argument("--first-stage-run-dir", type=str, default=str(FIRST_STAGE_RUN_DIR_DEFAULT), help="1?hard run ??")
-    parser.add_argument("--first-stage-model", type=str, default=None, help="? 1? ? (?? 20260305_1327)")
-    parser.add_argument("--list-first-stage-models", action="store_true", help="? ? 1?  ")
-    parser.add_argument("--batch-size", type=int, default=USER_OPTIONS["batch_size"], help=" ?")
-    parser.add_argument("--epochs", type=int, default=USER_OPTIONS["epochs"], help="? epoch")
+    parser = argparse.ArgumentParser(description="Hard 2차 conf head 학습")
+    parser.add_argument("--first-stage-run-dir", type=str, default=str(FIRST_STAGE_RUN_DIR_DEFAULT), help="1차 hard run 경로")
+    parser.add_argument("--first-stage-model", type=str, default=None, help="특정 1차 모델 선택 (예: 20260305_1327)")
+    parser.add_argument("--list-first-stage-models", action="store_true", help="1차 모델 목록 출력")
+    parser.add_argument("--batch-size", type=int, default=USER_OPTIONS["batch_size"], help="배치 크기")
+    parser.add_argument("--epochs", type=int, default=USER_OPTIONS["epochs"], help="학습 epoch")
     parser.add_argument("--learning-rate", type=float, default=USER_OPTIONS["learning_rate"], help="conf head 학습률")
-    parser.add_argument("--target-overall-best-f1", type=float, default=USER_OPTIONS["target_overall_best_f1"])
-    parser.add_argument("--target-overall-auc", type=float, default=USER_OPTIONS["target_overall_auc"])
-    parser.add_argument("--target-overall-separation", type=float, default=USER_OPTIONS["target_overall_separation"])
-    parser.add_argument("--target-pass-mode", type=str, choices=["all_metrics", "f1_only"], default=USER_OPTIONS["target_pass_mode"])
     args = parser.parse_args()
 
-    # 1?   ?
+    # 1차 모델 목록 출력
     if args.list_first_stage_models:
         first_models_base = CURRENT_DIR / "2. hard_models_1st"
         if first_models_base.exists():
             models = [d.name for d in first_models_base.iterdir() if d.is_dir()]
             models.sort()
-            print("? ? 1?:")
+            print("사용 가능한 1차 모델:")
             for model in models:
                 print(f"  - {model}")
         else:
-            print("1? ??? ????:", first_models_base)
+            print("1차 모델 폴더 없음:", first_models_base)
         sys.exit(0)
 
     BATCH = int(args.batch_size)
     EPOCHS = int(args.epochs)
     CONF_LR = float(args.learning_rate)
+    TARGET_F1 = float(USER_OPTIONS["target_overall_best_f1"])
+    TARGET_AUC = float(USER_OPTIONS["target_overall_auc"])
+    TARGET_SEP = float(USER_OPTIONS["target_overall_separation"])
+    TARGET_PASS_MODE = str(USER_OPTIONS["target_pass_mode"])
 
-    # 1?  ?
+    # 1차 모델 선택
     if args.first_stage_model:
-        # ? 1???? 
+        # 직접 1차 모델 지정
         first_models_base = CURRENT_DIR / "2. hard_models_1st"
         first_stage_run_dir = first_models_base / args.first_stage_model
         if not first_stage_run_dir.exists():
-            raise FileNotFoundError(f"? 1???? ??? {first_stage_run_dir}")
-        print(f"?????1? ?: {args.first_stage_model}")
+            raise FileNotFoundError(f"지정한 1차 모델 경로가 없습니다: {first_stage_run_dir}")
+        print(f"지정한 1차 모델: {args.first_stage_model}")
     else:
-        #  best_hard_model_1st ?
+        # best_hard_model_1st 사용
         best_dir = Path(args.first_stage_run_dir).resolve()
         if not best_dir.exists():
-            raise FileNotFoundError(f"1?hard run ?? ??? {best_dir}")
+            raise FileNotFoundError(f"1차 hard run 경로가 없습니다: {best_dir}")
         
-        # best_model_selection.json? ?   
+        # best_model_selection.json 사용
         selection_file = best_dir / "best_model_selection.json"
         if selection_file.exists():
             import json
@@ -992,22 +1019,22 @@ def main():
             actual_model = selection_data["selected"]["model_run"]
             first_models_base = CURRENT_DIR / "2. hard_models_1st"
             first_stage_run_dir = first_models_base / actual_model
-            print(f" 1? ?: best_hard_model_1st -> {actual_model}")
+            print(f"1차 모델 선택: best_hard_model_1st -> {actual_model}")
         else:
-            #  ?? ?? ?
+            # best_hard_model_1st 내 단일 subdir 사용
             subdirs = [d for d in best_dir.iterdir() if d.is_dir()]
             if len(subdirs) == 1:
                 first_stage_run_dir = subdirs[0]
-                print(f" 1? ?: best_hard_model_1st -> {subdirs[0].name}")
+                print(f"1차 모델 선택: best_hard_model_1st -> {subdirs[0].name}")
             else:
-                raise FileNotFoundError(f"best_hard_model_1st? ? ?? ????: {best_dir}")
+                raise FileNotFoundError(f"best_hard_model_1st에 모델 디렉터리가 없습니다: {best_dir}")
     
     ckpt_dir = first_stage_run_dir / "checkpoints"
     if not ckpt_dir.is_dir():
-        raise FileNotFoundError(f"checkpoints ???? ??? {ckpt_dir}")
+        raise FileNotFoundError(f"checkpoints 폴더가 없습니다: {ckpt_dir}")
 
-    print(f"1?Hard run: {first_stage_run_dir}")
-    print(f"? ?: batch={BATCH}, epochs={EPOCHS}, lr={CONF_LR}")
+    print(f"1차 Hard run: {first_stage_run_dir}")
+    print(f"학습 설정: batch={BATCH}, epochs={EPOCHS}, lr={CONF_LR}")
     print("TF:", tf.__version__)
     print("GPUs:", tf.config.list_physical_devices("GPU"))
 
@@ -1015,10 +1042,10 @@ def main():
     data_run_dir = get_latest_hard_train_dir(hard_data_base)
     if data_run_dir is not None:
         data_root = data_run_dir
-        print("? ??? hard run):", data_run_dir)
+        print("사용 데이터 run (hard):", data_run_dir)
     else:
         data_root = DATA_FALLBACK_ROOT
-        print("1. hard_train_data run???  5. train_data fallback ?")
+        print("1. hard_train_data run 없음, 5. train_data로 fallback")
 
     train_seq = data_root / "train" / "break_imgs_train.npy"
     train_lab = data_root / "train" / "break_labels_train.npy"
@@ -1027,8 +1054,8 @@ def main():
 
     if not train_seq.exists() or not train_lab.exists():
         raise FileNotFoundError(
-            f"? ????????: {train_seq}, {train_lab}\n"
-            f"? 1. set_hard_train_data.py????hard_train_data/<run>/train,test NPY?????"
+            f"학습 데이터가 없습니다: {train_seq}, {train_lab}\n"
+            f"먼저 1. set_hard_train_data.py로 hard_train_data/<run>/train,test NPY를 생성하세요."
         )
 
     X, y, X_test, y_test, K = load_data(train_seq, train_lab, test_seq, test_lab)
@@ -1045,25 +1072,29 @@ def main():
         epochs=EPOCHS,
         batch_size=BATCH,
         learning_rate=CONF_LR,
-        target_f1=float(args.target_overall_best_f1),
-        target_auc=float(args.target_overall_auc),
-        target_sep=float(args.target_overall_separation),
-        pass_mode=str(args.target_pass_mode),
+        target_f1=TARGET_F1,
+        target_auc=TARGET_AUC,
+        target_sep=TARGET_SEP,
+        pass_mode=TARGET_PASS_MODE,
     )
     duplicate_run = _find_duplicate_hard2_run(RUN_BASE_DIR, signature)
     if duplicate_run is not None:
-        print(
-            f" ? ?:  run '{duplicate_run}'? ???? ???? "
-            "? ?? ?/??????"
-        )
+        print("\n" + "=" * 80)
+        print("⚠️  중복 실행 방지")
+        print("=" * 80)
+        print(f"🔍 감지된 중복 run: {duplicate_run}")
+        print(f"📋 동일한 학습 설정으로 이미 실행된 run이 존재합니다.")
+        print(f"💡 중복 실행을 방지하기 위해 학습을 건너뜁니다.")
+        print(f"📂 기존 run 위치: {RUN_BASE_DIR / duplicate_run}")
+        print("=" * 80 + "\n")
         return
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
     run_dir = RUN_BASE_DIR / timestamp
     if run_dir.exists():
-        raise FileExistsError(f"? timestamp run ? ?? ??? {run_dir}")
+        raise FileExistsError(f"timestamp run 경로가 이미 존재합니다: {run_dir}")
     run_dir.mkdir(parents=True, exist_ok=False)
-    print("2?Hard  run ??:", run_dir)
+    print("2차 Hard run 생성:", run_dir)
 
     second_ckpt_dir = run_dir / "checkpoints"
     second_ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -1104,10 +1135,10 @@ def main():
         },
         "data_run": data_run_name,
         "evaluation_target": {
-            "target_overall_best_f1": float(args.target_overall_best_f1),
-            "target_overall_auc": float(args.target_overall_auc),
-            "target_overall_separation": float(args.target_overall_separation),
-            "target_pass_mode": str(args.target_pass_mode),
+            "target_overall_best_f1": TARGET_F1,
+            "target_overall_auc": TARGET_AUC,
+            "target_overall_separation": TARGET_SEP,
+            "target_pass_mode": TARGET_PASS_MODE,
         },
         "first_stage_ckpt_dir": str(ckpt_dir),
     }
@@ -1117,37 +1148,36 @@ def main():
         json.dump(histories, f, ensure_ascii=False, indent=2)
 
     print("\n" + "=" * 60)
-    print(f"? ?? (??? {run_dir / 'evaluate'})")
+    print(f"상세 평가 (저장: {run_dir / 'evaluate'})")
     print("=" * 60)
-    print("[EVAL 1/7] hard 2?? ?? ?")
+    print("[정보][평가 1/7] hard 2차 평가 실행")
     local_eval_dir = _run_stage2_evaluation(
         run_dir=run_dir,
-        target_f1=float(args.target_overall_best_f1),
-        target_auc=float(args.target_overall_auc),
-        target_sep=float(args.target_overall_separation),
-        pass_mode=str(args.target_pass_mode),
+        target_f1=TARGET_F1,
+        target_auc=TARGET_AUC,
+        target_sep=TARGET_SEP,
+        pass_mode=TARGET_PASS_MODE,
         X_test=X_test,
         y_test=y_test,
         K=K,
     )
-    print("[EVAL 2/7] 평가 결과를 run 폴더 내부에 저장")
-    print("[EVAL 3/7] training_feedback/evaluation_metrics 확인")
+    print("[정보][평가 2/7] 평가 결과를 run 폴더 내부에 저장")
+    print("[정보][평가 3/7] training_feedback/evaluation_metrics 확인")
     print(f"저장: {local_eval_dir / 'training_feedback.json'}")
     print(f"저장: {local_eval_dir / 'evaluation_metrics.json'}")
-    print("[EVAL 4/7] 베스트 모델 후보 비교 준비")
-    print("[EVAL 5/7] 베스트 모델 비교/선정")
+    print("[정보][평가 4/7] 베스트 모델 후보 비교 준비")
+    print("[정보][평가 5/7] 베스트 모델 비교/선정")
     _update_best_hard2_model(
         models_base=RUN_BASE_DIR,
         best_alias_dir=BEST_ALIAS_DIR,
-        target_f1=float(args.target_overall_best_f1),
-        target_auc=float(args.target_overall_auc),
-        target_sep=float(args.target_overall_separation),
+        target_f1=TARGET_F1,
+        target_auc=TARGET_AUC,
+        target_sep=TARGET_SEP,
     )
-    print("[EVAL 6/7] 히스토리 기록 완료")
-    print("[EVAL 7/7] 상세 평가 완료")
+    print("[정보][평가 6/7] 히스토리 기록 완료")
+    print("[정보][평가 7/7] 상세 평가 완료")
     print(f"상세 평가 결과: {local_eval_dir}")
 
 
 if __name__ == "__main__":
     main()
-

@@ -469,42 +469,6 @@ def process_out_files_for_measno(pole_dir, measno, meas_info, output_dir):
     return output_file
 
 
-def csv_contains_break_location(csv_path, break_height, break_degree, height_tolerance=0.01, degree_tolerance=0.5):
-    """
-    CSV 파일에 파단 위치(breakheight, breakdegree)가 포함되어 있는지 확인.
-    
-    Args:
-        csv_path: CSV 파일 경로
-        break_height: 파단 높이
-        break_degree: 파단 각도
-        height_tolerance: 높이 허용 오차 (기본값: 0.01m = 1cm)
-        degree_tolerance: 각도 허용 오차 (기본값: 0.5도)
-    
-    Returns:
-        bool: 파단 위치가 포함되어 있으면 True
-    """
-    try:
-        df = pd.read_csv(csv_path)
-        
-        if df.empty:
-            return False
-        
-        # 필요한 컬럼 확인
-        if 'height' not in df.columns or 'degree' not in df.columns:
-            return False
-        
-        # breakheight와 breakdegree 모두 포함되는지 확인
-        height_mask = np.abs(df['height'] - break_height) <= height_tolerance
-        degree_mask = np.abs(df['degree'] - break_degree) <= degree_tolerance
-        
-        # 두 조건을 모두 만족하는 행이 있는지 확인
-        combined_mask = height_mask & degree_mask
-        return combined_mask.any()
-        
-    except Exception as e:
-        return False
-
-
 def process_pole_directory(pole_dir, output_dir):
     """
     한 전주 디렉토리의 모든 OUT 파일 처리
@@ -595,7 +559,7 @@ def process_pole_directory(pole_dir, output_dir):
             result = process_out_files_for_measno(pole_dir, measno, meas_info, output_dir)
             if result:
                 created_csv_files.append(result)
-        except Exception as e:
+        except Exception:
             continue
     
     # 파단 위치 검증 없이 모든 생성된 CSV 파일 유지 (예측용)
@@ -633,7 +597,7 @@ def process_pole_directory(pole_dir, output_dir):
                     
                     with open(output_info_file, 'w', encoding='utf-8') as f:
                         json.dump(csv_break_info, f, ensure_ascii=False, indent=2)
-                except Exception as e:
+                except Exception:
                     pass  # 저장 실패해도 무시
         
         # 생성된 CSV 파일들에 대해 이미지 생성 (각 CSV 파일에 대응하는 파단 정보 파일 사용)
@@ -646,7 +610,7 @@ def process_pole_directory(pole_dir, output_dir):
                     
                     try:
                         plot_csv_2d(csv_file, None, output_info_file)
-                    except Exception as e:
+                    except Exception:
                         pass  # 이미지 생성 실패해도 무시
     
     # 정상 데이터는 정보 파일을 저장하지 않고 CSV 파일만 저장
@@ -671,70 +635,57 @@ def process_all_raw_pole_data(
     raw_data_path = Path(current_dir) / raw_data_base_dir
     
     if not raw_data_path.exists():
-        print(f"오류: 원본 데이터 디렉토리를 찾을 수 없습니다: {raw_data_base_dir}")
+        print(f"[오류] 원본 데이터 디렉터리를 찾을 수 없습니다: {raw_data_base_dir}")
         return
     
     total_break_processed = 0
     
     # 1) 파단(break) 머지
-    for data_type in ['break']:
-        data_type_path = raw_data_path / data_type
-        
-        if not data_type_path.exists():
-            continue
-        
+    data_type = "break"
+    data_type_path = raw_data_path / data_type
+    if data_type_path.exists():
         output_path = Path(current_dir) / output_base_dir / data_type
-        
-        print(f"\n[{data_type.upper()}] 처리 시작")
-        
+        print(f"\n[정보][파단] 처리 시작")
+
         projects = [d for d in data_type_path.iterdir() if d.is_dir()]
-        if not projects:
-            continue
-        
         total_poles = 0
         total_processed = 0
-        
-        project_pbar = tqdm(sorted(projects), desc=f"  [{data_type.upper()}] 프로젝트 처리", unit="프로젝트", leave=False)
-        
-        for project_idx, project_dir in enumerate(project_pbar, 1):
+
+        project_pbar = tqdm(sorted(projects), desc="  [파단] 프로젝트 처리", unit="프로젝트", leave=False)
+        for project_dir in project_pbar:
             project_name = project_dir.name
             project_pbar.set_postfix_str(f"{project_name}", refresh=False)
-            
+
             pole_dirs = [d for d in project_dir.iterdir() if d.is_dir()]
             total_poles_in_project = len(pole_dirs)
-            
+
             project_output_dir = output_path / project_name
             saved_pole_count = 0
             if project_output_dir.exists() and project_output_dir.is_dir():
                 for pole_dir in project_output_dir.iterdir():
-                    if pole_dir.is_dir():
-                        csv_files = list(pole_dir.glob("*_OUT_processed.csv"))
-                        if len(csv_files) > 0:
-                            saved_pole_count += 1
-            
+                    if pole_dir.is_dir() and list(pole_dir.glob("*_OUT_processed.csv")):
+                        saved_pole_count += 1
+
             if saved_pole_count > 0 and saved_pole_count == total_poles_in_project:
                 total_poles += total_poles_in_project
                 for pole_dir in sorted(pole_dirs):
-                    poleid = pole_dir.name
-                    pole_output_dir = project_output_dir / poleid
+                    pole_output_dir = project_output_dir / pole_dir.name
                     if pole_output_dir.exists():
-                        csv_files = list(pole_output_dir.glob("*_OUT_processed.csv"))
-                        total_processed += len(csv_files)
+                        total_processed += len(list(pole_output_dir.glob("*_OUT_processed.csv")))
                 continue
-            
+
             for pole_dir in sorted(pole_dirs):
                 total_poles += 1
                 try:
                     processed_count = process_pole_directory(str(pole_dir), str(output_path))
                     if processed_count > 0:
                         total_processed += processed_count
-                except Exception as e:
+                except Exception:
                     continue
-        
+
         project_pbar.close()
         total_break_processed = total_processed
-        
-        print(f"\n[{data_type.upper()}] 완료: 전주 {total_poles}개, 파일 {total_processed}개")
+        print(f"\n[정보][파단] 완료: 전주 {total_poles}개, 파일 {total_processed}개")
     
     # 2) 정상(normal) 합성: 이미지·파단 정보는 생성하지 않고, 파단 CSV 개수의 10배만 랜덤 샘플로 저장
     normal_path = raw_data_path / "normal"
@@ -742,7 +693,7 @@ def process_all_raw_pole_data(
     target_normal_count = normal_ratio * total_break_processed
     
     if normal_path.exists() and target_normal_count > 0:
-        print(f"\n[NORMAL] 정상 데이터 합성 시작 (목표: {target_normal_count}개)")
+        print(f"\n[정보][정상] 데이터 합성 시작 (목표: {target_normal_count}개)")
         
         all_normal_pole_dirs = []
         for project_dir in normal_path.iterdir():
@@ -757,7 +708,7 @@ def process_all_raw_pole_data(
         
         random.shuffle(all_normal_pole_dirs)
         normal_processed = 0
-        normal_pbar = tqdm(all_normal_pole_dirs, desc="  [NORMAL] 전주 처리", unit="전주", leave=False)
+        normal_pbar = tqdm(all_normal_pole_dirs, desc="  [정상] 전주 처리", unit="전주", leave=False)
         
         for pole_dir in normal_pbar:
             if normal_processed >= target_normal_count:
@@ -776,13 +727,13 @@ def process_all_raw_pole_data(
             try:
                 cnt = process_pole_directory(str(pole_dir), str(normal_output_path))
                 normal_processed += cnt
-            except Exception as e:
+            except Exception:
                 continue
         
         normal_pbar.close()
-        print(f"\n[NORMAL] 완료: {normal_processed}개 저장")
+        print(f"\n[정보][정상] 완료: {normal_processed}개 저장")
     
-    print(f"\n전체 처리 완료: {output_base_dir}")
+    print(f"\n[정보] 전체 처리 완료: {output_base_dir}")
 
 
 def parse_args():

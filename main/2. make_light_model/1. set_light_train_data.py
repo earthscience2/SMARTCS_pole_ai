@@ -22,9 +22,6 @@ CURRENT_DIR = Path(__file__).resolve().parent
 DATA_SET_DIR = CURRENT_DIR.parent / "1. make_data set"
 IMG_HEIGHT = 304
 DEGREE_GRID = np.arange(90.0, 180.0 + 5.0, 5.0, dtype=np.float32)
-# Backward compatibility for modules importing old names.
-current_dir = str(CURRENT_DIR)
-img_height = IMG_HEIGHT
 
 
 def load_csv(csv_path: Path) -> Optional[pd.DataFrame]:
@@ -107,22 +104,11 @@ def resize_height(img: np.ndarray, target_h: int = IMG_HEIGHT) -> np.ndarray:
     return zoom(img, (target_h / h, 1.0, 1.0), order=1).astype(np.float32)
 
 
-def resize_img_height(img: np.ndarray, target_h: int = IMG_HEIGHT) -> np.ndarray:
-    """기존 코드 호환 alias."""
-    return resize_height(img, target_h=target_h)
-
-
 def prepare_sequence_from_csv(
     csv_path: str,
     sort_by: str = "height",
-    feature_min_max: Optional[Dict[str, Tuple[float, float]]] = None,
-    max_height: Optional[int] = None,
 ) -> Optional[Tuple[np.ndarray, Dict]]:
-    """
-    기존 코드 호환 함수.
-    `feature_min_max`, `max_height`는 현재 로직에서 사용하지 않는다.
-    """
-    _ = feature_min_max, max_height
+    """CSV를 읽어 정규화/각도 보정 후 이미지와 메타 정보를 만든다."""
     df = load_csv(Path(csv_path))
     if df is None:
         return None
@@ -206,17 +192,6 @@ def collect_all_crop_files(data_dir: str, is_break: bool) -> List[Tuple[str, str
                 for csv_path in pole_dir.glob(pattern):
                     result.append((str(csv_path), project_name, poleid, label))
     return result
-
-
-def get_latest_run_dir(base_dir: str = "1. light_train_data") -> Optional[Path]:
-    """최신 run 디렉터리를 반환한다."""
-    base = CURRENT_DIR / base_dir
-    if not base.exists():
-        return None
-    candidates = [d for d in base.iterdir() if d.is_dir() and len(d.name) == 13 and d.name[8] == "_"]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda p: p.name)
 
 
 def process_cropped_data(

@@ -71,9 +71,8 @@ run 폴더명 규칙:
 
 학습 로그:
 
-- 상세 평가 시작 후 콘솔에 `[EVAL 1/7]` ~ `[EVAL 7/7]` 진행 로그 출력
-- 베스트 모델로 선정되면 `축하합니다! ... 베스트 모델로 선정되었습니다.` 로그 출력
-- 베스트 모델로 선정되지 않으면 `아쉽네요: ...` 로그 출력
+- 상세 평가 시작 후 콘솔에 `[정보][평가 1/7]` ~ `[정보][평가 7/7]` 로그 출력
+- 베스트 모델 교체/유지/건너뜀 결과를 한국어 로그로 출력
 
 ## 3) WSL2 GPU 루프 학습
 
@@ -88,7 +87,6 @@ bash "main/2. make_light_model/2. make_light_model_gpu.sh"
 - `LIGHT_LR`, `LIGHT_LR_DECAY`
 - `LIGHT_FOCAL_ALPHA_SCHEDULE`
 - `LIGHT_BREAK_WEIGHT_SCALE_SCHEDULE`
-- `LIGHT_TARGET_PRECISION`, `LIGHT_TARGET_RECALL`, `LIGHT_TARGET_F1`
 
 가상환경 우선순위:
 

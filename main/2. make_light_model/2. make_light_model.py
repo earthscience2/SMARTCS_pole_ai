@@ -7,9 +7,7 @@
 - CPU 강제: python 2. make_light_model.py --cpu
   -> GPU 스크립트 건너뛰고 바로 CPU로 실행
 - 로컬 모드: python 2. make_light_model.py --local
-  -> 자동 재학습 없이 한 번만 실행 (CPU)
-- 자동 재학습: python 2. make_light_model.py --auto-retrain
-  -> 평가 기반 자동 재학습 활성화
+  -> GPU 스크립트 재호출 없이 현재 환경에서 바로 실행
 """
 
 import os
@@ -22,7 +20,15 @@ import argparse
 # Windows 인코딩 문제 해결
 if os.name == 'nt':  # Windows
     os.environ['PYTHONIOENCODING'] = 'utf-8'
-    os.environ['PYTHONUTF8'] = '1'
+    # subprocess 인코딩 설정
+    import locale
+    try:
+        locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+    except locale.Error:
+        try:
+            locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+        except locale.Error:
+            pass  # 설정할 수 없으면 무시
 import importlib.util
 import shutil
 from pathlib import Path
@@ -36,23 +42,12 @@ from logger import get_logger, log_event
 LOGGER = get_logger("train_light_model")
 
 
-def _normalize_log_message(text: str) -> str:
-    if not text:
-        return text
-    if "?" in text and any(ord(ch) > 127 for ch in text):
-        ascii_only = "".join(ch if ord(ch) < 128 else " " for ch in text)
-        ascii_only = " ".join(ascii_only.split())
-        return f"[legacy-text-normalized] {ascii_only}" if ascii_only else "[legacy-text-normalized]"
-    return text
-
-
 def _log_print(*args, **kwargs):
     sep = kwargs.get("sep", " ")
     text = sep.join(str(a) for a in args)
-    normalized = _normalize_log_message(text)
-    if not normalized:
+    if not text:
         return
-    for line in normalized.splitlines() or [""]:
+    for line in text.splitlines() or [""]:
         log_event(LOGGER, "INFO", "GENERAL", line)
 
 
@@ -89,8 +84,8 @@ def try_wsl2_gpu_script():
         print(f"스크립트 경로: {_wsl_path}")
         print("=" * 60)
         
-        # 현재 스크립트의 모든 인수를 전달 (--local, --auto-retrain 제외)
-        filtered_args = [a for a in sys.argv[1:] if a not in ["--local", "--auto-retrain"]]
+        # 현재 스크립트 인수 전달 (--local 제외)
+        filtered_args = [a for a in sys.argv[1:] if a != "--local"]
         
         ret = subprocess.run(["wsl", "bash", _wsl_path] + filtered_args, 
                            cwd=str(_project_root))
@@ -122,17 +117,12 @@ def try_wsl2_gpu_script():
         print("CPU 모드로 fallback합니다.")
         return False
 
-# 기본적으로 자동 재학습 비활성화 (한 번만 학습)
-# 자동 재학습을 활성화하려면 --auto-retrain 옵션을 사용하세요
-_enable_auto_retrain = "--auto-retrain" in sys.argv
 _run_local = "--local" in sys.argv
 _force_cpu = "--cpu" in sys.argv
 
 # 명령행 인수 정리
 if "--local" in sys.argv:
     sys.argv = [a for a in sys.argv if a != "--local"]
-if "--auto-retrain" in sys.argv:
-    sys.argv = [a for a in sys.argv if a != "--auto-retrain"]
 if "--cpu" in sys.argv:
     sys.argv = [a for a in sys.argv if a != "--cpu"]
 
@@ -218,14 +208,13 @@ USER_OPTIONS = {
     "focal_alpha": 0.96,
     "break_class_weight_scale": 1.4,
 
-    # [서브 파라미터] 중복 검사(signature)에는 미포함 (평가/선정 기준 및 실행 옵션)
+    # [평가/선정 기준] 학습 인수로 받지 않고 파일 내부 설정으로 관리
     "target_precision": 0.81,
     "target_recall": 0.90,
     "target_f1": 0.84,
     "target_pass_mode": "all_metrics",   # all_metrics | recall_priority
     "best_target_recall": 0.90,
     "best_target_accuracy": 0.50,
-    "skip_evaluation": False,
     # 고정 분류 임계값 사용 시 threshold 값
     "fixed_threshold": 0.50,
 }
@@ -241,16 +230,7 @@ parser.add_argument(
     default=USER_OPTIONS["break_class_weight_scale"],
     help="파단 클래스 가중치 스케일",
 )
-# 목표 성능 지표 (베스트 모델 선택 기준)
-parser.add_argument("--target-precision", type=float, default=USER_OPTIONS["target_precision"], help="목표 precision")
-parser.add_argument("--target-recall", type=float, default=USER_OPTIONS["target_recall"], help="목표 recall")
-parser.add_argument("--target-f1", type=float, default=USER_OPTIONS["target_f1"], help="목표 F1")
-parser.add_argument("--target-pass-mode", type=str, choices=["all_metrics", "recall_priority"], default=USER_OPTIONS["target_pass_mode"])
-parser.add_argument("--best-target-recall", type=float, default=USER_OPTIONS["best_target_recall"])
-parser.add_argument("--best-target-accuracy", type=float, default=USER_OPTIONS["best_target_accuracy"])
-parser.add_argument("--skip-evaluation", action="store_true", default=USER_OPTIONS["skip_evaluation"], help="평가 단계 건너뛰기")
 parser.add_argument("--fixed-threshold", type=float, default=USER_OPTIONS["fixed_threshold"], help="고정 분류 임계값(threshold)")
-parser.add_argument("--auto-retrain", action="store_true", help="자동 재학습 활성화 (성능 미달 시 파라미터 조정하여 재학습)")
 args = parser.parse_args()
 
 RUNTIME_EPOCHS = int(args.epochs)
@@ -258,6 +238,12 @@ RUNTIME_BATCH = int(args.batch_size)
 RUNTIME_LR = float(args.learning_rate)
 RUNTIME_FOCAL_ALPHA = float(args.focal_alpha)
 RUNTIME_BREAK_WEIGHT_SCALE = float(args.break_class_weight_scale)
+RUNTIME_TARGET_PRECISION = float(USER_OPTIONS["target_precision"])
+RUNTIME_TARGET_RECALL = float(USER_OPTIONS["target_recall"])
+RUNTIME_TARGET_F1 = float(USER_OPTIONS["target_f1"])
+RUNTIME_TARGET_PASS_MODE = str(USER_OPTIONS["target_pass_mode"])
+RUNTIME_BEST_TARGET_RECALL = float(USER_OPTIONS["best_target_recall"])
+RUNTIME_BEST_TARGET_ACCURACY = float(USER_OPTIONS["best_target_accuracy"])
 
 
 def _to_float(value):
@@ -346,32 +332,32 @@ def build_test_data_from_merge_and_edit(
         return None, None, None
     from tqdm import tqdm
     prepare_sequence_from_csv = std.prepare_sequence_from_csv
-    resize_img_height = std.resize_img_height
+    resize_height = std.resize_height
     crop_files = std.collect_break_files_from_edit_data(edit_data_dir=edit_data_dir, merge_data_dir=merge_data_dir)
     normal_files = std.collect_all_crop_files(merge_data_dir, is_break=False)
     imgs, labels_cls, csv_paths = [], [], []
     target_h = 304
     for csv_path, _pn, _pid, label in tqdm(crop_files, desc="  [break] CSV 전처리", unit="file"):
-        result = prepare_sequence_from_csv(csv_path=csv_path, sort_by=sort_by, feature_min_max=None)
+        result = prepare_sequence_from_csv(csv_path=csv_path, sort_by=sort_by)
         if result is None:
             continue
         img, meta = result
         if meta.get("original_length", 0) < min_points or meta.get("original_length", 0) > max_points:
             continue
-        imgs.append(resize_img_height(img, target_h=target_h))
+        imgs.append(resize_height(img, target_h=target_h))
         labels_cls.append(label)
         csv_paths.append(str(csv_path))
     n_kept = 0
     for csv_path, _pn, _pid, label in tqdm(normal_files, desc="  [normal] CSV 전처리", unit="file"):
         if n_kept >= max_normal_samples:
             break
-        result = prepare_sequence_from_csv(csv_path=csv_path, sort_by=sort_by, feature_min_max=None)
+        result = prepare_sequence_from_csv(csv_path=csv_path, sort_by=sort_by)
         if result is None:
             continue
         img, meta = result
         if meta.get("original_length", 0) < min_points or meta.get("original_length", 0) > max_points:
             continue
-        imgs.append(resize_img_height(img, target_h=target_h))
+        imgs.append(resize_height(img, target_h=target_h))
         labels_cls.append(label)
         csv_paths.append(str(csv_path))
         n_kept += 1
@@ -700,10 +686,14 @@ light_models_base = Path(current_dir) / "2. light_models"
 light_signature = _build_light_signature(str(data_run_dir.name))
 duplicate_light_run = _find_duplicate_light_run(light_models_base, light_signature)
 if duplicate_light_run is not None:
-    print(
-        f"중복 파라미터 감지: 기존 run '{duplicate_light_run}'와 동일한 학습 설정입니다. "
-        "이번 실행은 학습/평가를 건너뜁니다."
-    )
+    print("\n" + "=" * 80)
+    print("⚠️  중복 실행 방지")
+    print("=" * 80)
+    print(f"🔍 감지된 중복 run: {duplicate_light_run}")
+    print(f"📋 동일한 학습 설정으로 이미 실행된 run이 존재합니다.")
+    print(f"💡 중복 실행을 방지하기 위해 학습을 건너뜁니다.")
+    print(f"📂 기존 run 위치: {light_models_base / duplicate_light_run}")
+    print("=" * 80 + "\n")
     sys.exit(0)
 
 
@@ -759,11 +749,11 @@ print("X_val  :", X_val.shape,   "y_val counts  :", np.unique(y_val[:, 0].astype
 BREAK_CLASS_WEIGHT_SCALE = RUNTIME_BREAK_WEIGHT_SCALE
 
 classes = np.array([0, 1], dtype=np.int32)
-y_train_cls = y_train[:, 0].astype(np.int32)   # (N,) 0/1?
+y_train_cls = y_train[:, 0].astype(np.int32)   # (N,) 0/1
 cw = compute_class_weight(class_weight="balanced", classes=classes, y=y_train_cls)
 
 cw0 = float(cw[0])
-cw1 = float(cw[1]) * BREAK_CLASS_WEIGHT_SCALE   # ? ? ? 
+cw1 = float(cw[1]) * BREAK_CLASS_WEIGHT_SCALE   # 파단 클래스 가중치 보정
 
 print(f"Class weights: 0={cw0:.4f}, 1={cw1:.4f} (break scale={BREAK_CLASS_WEIGHT_SCALE})")
 
@@ -826,7 +816,7 @@ def make_stage(x, filters, blocks, first_stride=(1,1)):
 def build_resnet18_like(input_shape=(304, 19, 3)):
     inp = keras.Input(shape=input_shape)
 
-    # stem: width  ? stride (2,1)
+    # stem: width 축 유지, height 축만 stride (2,1) 적용
     x = layers.Conv2D(64, 7, strides=(2,1), padding="same", use_bias=False)(inp)
     x = layers.BatchNormalization()(x)
     x = layers.ReLU()(x)
@@ -1163,317 +1153,291 @@ print(f"  베스트 모델: {best_ckpt_path}")
 print(f"  결과 폴더: {results_dir}")
 print(f"  run timestamp: {timestamp}")
 
-if args.skip_evaluation:
-    print("평가 건너뜀 (--skip-evaluation)")
-else:
-    # ========== 평가 상세: 2. light_models/<run>/evaluation/ 저장 ==========
-    detail_dir = run_timestamp_dir / "evaluation"
-    detail_dir.mkdir(parents=True, exist_ok=True)
-    run_name = timestamp
-    print("[EVAL 1/7] 기본 지표 계산")
-    print(f"\n{'='*60}\n평가 상세 저장 폴더: {detail_dir}\n{'='*60}")
+# ========== 평가 상세: 2. light_models/<run>/evaluation/ 저장 ==========
+detail_dir = run_timestamp_dir / "evaluation"
+detail_dir.mkdir(parents=True, exist_ok=True)
+run_name = timestamp
+print("[정보][평가 1/7] 기본 지표 계산")
+print(f"\n{'='*60}\n평가 상세 저장 폴더: {detail_dir}\n{'='*60}")
 
-    X_all, y_all = load_all_data_from_light_train_run(data_run_dir)
+X_all, y_all = load_all_data_from_light_train_run(data_run_dir)
 
-    print("[EVAL 2/7] 테스트 데이터 요약")
+print("[정보][평가 2/7] 테스트 데이터 요약")
 
-    y_test_cls = y_test[:, 0].astype(int)
-    n_total = int(len(X_test))
-    n_normal = int((y_test_cls == 0).sum())
-    n_break = int((y_test_cls == 1).sum())
-    n_break_true = n_break
-    test_data_source_desc = f"1. light_train_data/{data_run_dir.name}/test (기본 test 분할)"
+y_test_cls = y_test[:, 0].astype(int)
+n_total = int(len(X_test))
+n_normal = int((y_test_cls == 0).sum())
+n_break = int((y_test_cls == 1).sum())
+n_break_true = n_break
+test_data_source_desc = f"1. light_train_data/{data_run_dir.name}/test (기본 test 분할)"
 
-    y_prob = np.asarray(best_model.predict(X_test, batch_size=BATCH)).reshape(-1)
-    y_pred = (y_prob >= best_th).astype(int)
+y_prob = np.asarray(best_model.predict(X_test, batch_size=BATCH)).reshape(-1)
+y_pred = (y_prob >= best_th).astype(int)
 
-    precision = precision_score(y_test_cls, y_pred, zero_division=0)
-    recall = recall_score(y_test_cls, y_pred, zero_division=0)
-    f1 = f1_score(y_test_cls, y_pred, zero_division=0)
-    acc = accuracy_score(y_test_cls, y_pred)
-    roc_auc = roc_auc_score(y_test_cls, y_prob)
-    fpr, tpr, _ = roc_curve(y_test_cls, y_prob)
-    prec_curve, rec_curve, _ = precision_recall_curve(y_test_cls, y_prob)
-    pr_auc = sk_metrics.auc(rec_curve, prec_curve)
-    cm = confusion_matrix(y_test_cls, y_pred)
-    cm_norm = cm / (cm.sum(axis=1, keepdims=True) + 1e-12)
-    val_used = False
+precision = precision_score(y_test_cls, y_pred, zero_division=0)
+recall = recall_score(y_test_cls, y_pred, zero_division=0)
+f1 = f1_score(y_test_cls, y_pred, zero_division=0)
+acc = accuracy_score(y_test_cls, y_pred)
+roc_auc = roc_auc_score(y_test_cls, y_prob)
+fpr, tpr, _ = roc_curve(y_test_cls, y_prob)
+prec_curve, rec_curve, _ = precision_recall_curve(y_test_cls, y_prob)
+pr_auc = sk_metrics.auc(rec_curve, prec_curve)
+cm = confusion_matrix(y_test_cls, y_pred)
+cm_norm = cm / (cm.sum(axis=1, keepdims=True) + 1e-12)
+val_used = False
 
-    fn_at_best = int(((y_test_cls == 1) & (y_pred == 0)).sum())
-    fp_at_best = int(((y_test_cls == 0) & (y_pred == 1)).sum())
-    fn_ratio_at_best = fn_at_best / n_break_true if n_break_true else 0
-    threshold_sensitivity = [{
-        "threshold": round(float(best_th), 4),
-        "fn_count": fn_at_best,
-        "fn_ratio_pct": round(100 * fn_ratio_at_best, 2),
-        "recall": round(float(recall), 4),
-        "precision": round(float(precision), 4),
-        "fp_count": fp_at_best,
-        "note": "fixed_threshold_only",
-    }]
-    th_sens_path = detail_dir / "threshold_sensitivity.json"
-    with open(th_sens_path, "w", encoding="utf-8") as f:
-        json.dump({"n_break_true": n_break_true, "rows": threshold_sensitivity}, f, ensure_ascii=False, indent=2)
-    print("[EVAL 3/7] Confusion matrix / ROC-PR 저장")
+fn_at_best = int(((y_test_cls == 1) & (y_pred == 0)).sum())
+fp_at_best = int(((y_test_cls == 0) & (y_pred == 1)).sum())
+fn_ratio_at_best = fn_at_best / n_break_true if n_break_true else 0
+threshold_sensitivity = [{
+    "threshold": round(float(best_th), 4),
+    "fn_count": fn_at_best,
+    "fn_ratio_pct": round(100 * fn_ratio_at_best, 2),
+    "recall": round(float(recall), 4),
+    "precision": round(float(precision), 4),
+    "fp_count": fp_at_best,
+    "note": "fixed_threshold_only",
+}]
+th_sens_path = detail_dir / "threshold_sensitivity.json"
+with open(th_sens_path, "w", encoding="utf-8") as f:
+    json.dump({"n_break_true": n_break_true, "rows": threshold_sensitivity}, f, ensure_ascii=False, indent=2)
+print("[정보][평가 3/7] Confusion matrix / ROC-PR 저장")
 
-    plt.rcParams["axes.unicode_minus"] = False
+plt.rcParams["axes.unicode_minus"] = False
+fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+axes[0].imshow(cm, cmap="Blues")
+axes[0].set_title("Confusion Matrix (Counts)")
+axes[0].set_xlabel("Predicted")
+axes[0].set_ylabel("True")
+for i in range(2):
+    for j in range(2):
+        axes[0].text(j, i, str(cm[i, j]), ha="center", va="center", fontsize=14, fontweight="bold")
+axes[1].imshow(cm_norm, cmap="Blues", vmin=0, vmax=1)
+axes[1].set_title("Confusion Matrix (Normalized)")
+for i in range(2):
+    for j in range(2):
+        axes[1].text(j, i, f"{cm[i, j]}\n({cm_norm[i, j] * 100:.1f}%)", ha="center", va="center", fontsize=11)
+plt.tight_layout()
+cm_path = detail_dir / "test_confusion_matrix.png"
+plt.savefig(cm_path, dpi=150, bbox_inches="tight")
+plt.close()
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+axes[0].plot(fpr, tpr, label=f"ROC (AUC={roc_auc:.4f})", lw=2)
+axes[0].plot([0, 1], [0, 1], "k--")
+axes[0].set_xlabel("False Positive Rate")
+axes[0].set_ylabel("True Positive Rate")
+axes[0].set_title("ROC Curve")
+axes[0].legend()
+axes[0].grid(True, alpha=0.3)
+axes[1].plot(rec_curve, prec_curve, label=f"PR (AUC={pr_auc:.4f})", lw=2)
+axes[1].set_xlabel("Recall")
+axes[1].set_ylabel("Precision")
+axes[1].set_title("Precision-Recall Curve")
+axes[1].legend()
+axes[1].grid(True, alpha=0.3)
+plt.tight_layout()
+roc_path = detail_dir / "test_roc_pr_curves.png"
+plt.savefig(roc_path, dpi=150, bbox_inches="tight")
+plt.close()
+
+th_path = None
+
+fp = (y_test_cls == 0) & (y_pred == 1)
+fn = (y_test_cls == 1) & (y_pred == 0)
+fp_indices = np.where(fp)[0].tolist()
+fn_indices = np.where(fn)[0].tolist()
+tp_mask = (y_test_cls == 1) & (y_pred == 1)
+tn_mask = (y_test_cls == 0) & (y_pred == 0)
+tp_indices = np.where(tp_mask)[0].tolist()
+tn_indices = np.where(tn_mask)[0].tolist()
+
+acc_all = precision_all = recall_all = f1_all = roc_auc_all = pr_auc_all = 0.0
+cm_all = np.zeros((2, 2), dtype=int)
+cm_all_norm = cm_all.astype(float)
+cm_all_path = roc_all_path = th_all_path = dist_all_path = tp_tn_all_path = detail_dir / "_.png"
+if X_all is not None and len(X_all) > 0:
+    print("[정보][평가 4/7] light_train_data 전체 데이터 평가")
+    y_prob_all = best_model.predict(X_all, batch_size=BATCH, verbose=0).reshape(-1)
+    y_pred_all = (y_prob_all >= best_th).astype(int)
+    y_all_cls = y_all.reshape(-1).astype(int)
+    acc_all = accuracy_score(y_all_cls, y_pred_all)
+    precision_all = precision_score(y_all_cls, y_pred_all, zero_division=0)
+    recall_all = recall_score(y_all_cls, y_pred_all, zero_division=0)
+    f1_all = f1_score(y_all_cls, y_pred_all, zero_division=0)
+    roc_auc_all = roc_auc_score(y_all_cls, y_prob_all)
+    fpr_all, tpr_all, _ = roc_curve(y_all_cls, y_prob_all)
+    prec_curve_all, rec_curve_all, _ = precision_recall_curve(y_all_cls, y_prob_all)
+    pr_auc_all = sk_metrics.auc(rec_curve_all, prec_curve_all)
+    cm_all = confusion_matrix(y_all_cls, y_pred_all)
+    cm_all_norm = cm_all / (cm_all.sum(axis=1, keepdims=True) + 1e-12)
     fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-    axes[0].imshow(cm, cmap="Blues")
-    axes[0].set_title("Confusion Matrix (Counts)")
+    axes[0].imshow(cm_all, cmap="Blues")
+    axes[0].set_title("Confusion Matrix (Counts) [All Data]")
     axes[0].set_xlabel("Predicted")
     axes[0].set_ylabel("True")
     for i in range(2):
         for j in range(2):
-            axes[0].text(j, i, str(cm[i, j]), ha="center", va="center", fontsize=14, fontweight="bold")
-    axes[1].imshow(cm_norm, cmap="Blues", vmin=0, vmax=1)
-    axes[1].set_title("Confusion Matrix (Normalized)")
+            axes[0].text(j, i, str(cm_all[i, j]), ha="center", va="center", fontsize=14, fontweight="bold")
+    axes[1].imshow(cm_all_norm, cmap="Blues", vmin=0, vmax=1)
+    axes[1].set_title("Confusion Matrix (Normalized) [All Data]")
     for i in range(2):
         for j in range(2):
-            axes[1].text(j, i, f"{cm[i, j]}\n({cm_norm[i, j] * 100:.1f}%)", ha="center", va="center", fontsize=11)
+            axes[1].text(j, i, f"{cm_all[i, j]}\n({cm_all_norm[i, j] * 100:.1f}%)", ha="center", va="center", fontsize=11)
     plt.tight_layout()
-    cm_path = detail_dir / "test_confusion_matrix.png"
-    plt.savefig(cm_path, dpi=150, bbox_inches="tight")
+    cm_all_path = detail_dir / "all_confusion_matrix.png"
+    plt.savefig(cm_all_path, dpi=150, bbox_inches="tight")
     plt.close()
-
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    axes[0].plot(fpr, tpr, label=f"ROC (AUC={roc_auc:.4f})", lw=2)
+    axes[0].plot(fpr_all, tpr_all, label=f"ROC (AUC={roc_auc_all:.4f})", lw=2)
     axes[0].plot([0, 1], [0, 1], "k--")
     axes[0].set_xlabel("False Positive Rate")
     axes[0].set_ylabel("True Positive Rate")
-    axes[0].set_title("ROC Curve")
+    axes[0].set_title("ROC Curve [All Data]")
     axes[0].legend()
     axes[0].grid(True, alpha=0.3)
-    axes[1].plot(rec_curve, prec_curve, label=f"PR (AUC={pr_auc:.4f})", lw=2)
+    axes[1].plot(rec_curve_all, prec_curve_all, label=f"PR (AUC={pr_auc_all:.4f})", lw=2)
     axes[1].set_xlabel("Recall")
     axes[1].set_ylabel("Precision")
-    axes[1].set_title("Precision-Recall Curve")
+    axes[1].set_title("Precision-Recall Curve [All Data]")
     axes[1].legend()
     axes[1].grid(True, alpha=0.3)
     plt.tight_layout()
-    roc_path = detail_dir / "test_roc_pr_curves.png"
-    plt.savefig(roc_path, dpi=150, bbox_inches="tight")
+    roc_all_path = detail_dir / "all_roc_pr_curves.png"
+    plt.savefig(roc_all_path, dpi=150, bbox_inches="tight")
     plt.close()
+    th_all_path = dist_all_path = tp_tn_all_path = detail_dir / "all_extra.png"
+    plt.savefig(th_all_path, dpi=150)
+    plt.close()
+else:
+    print("[정보][평가 4/7] light_train_data 전체 데이터 없음(건너뜀)")
 
-    th_path = None
+misclass_summary = {"false_positive": {"count": len(fp_indices), "indices_sample": fp_indices[:50]}, "false_negative": {"count": len(fn_indices), "indices_sample": fn_indices[:50]}, "true_positive": {"count": len(tp_indices), "indices_sample": tp_indices[:50]}, "true_negative": {"count": len(tn_indices), "indices_sample": tn_indices[:50]}}
+if fp_indices:
+    misclass_summary["false_positive"]["prob_mean"] = float(y_prob[fp].mean())
+    misclass_summary["false_positive"]["prob_std"] = float(y_prob[fp].std())
+if fn_indices:
+    misclass_summary["false_negative"]["prob_mean"] = float(y_prob[fn].mean())
+    misclass_summary["false_negative"]["prob_std"] = float(y_prob[fn].std())
+if tp_indices:
+    misclass_summary["true_positive"]["prob_mean"] = float(y_prob[tp_mask].mean())
+    misclass_summary["true_positive"]["prob_std"] = float(y_prob[tp_mask].std())
+if tn_indices:
+    misclass_summary["true_negative"]["prob_mean"] = float(y_prob[tn_mask].mean())
+    misclass_summary["true_negative"]["prob_std"] = float(y_prob[tn_mask].std())
 
-    fp = (y_test_cls == 0) & (y_pred == 1)
-    fn = (y_test_cls == 1) & (y_pred == 0)
-    fp_indices = np.where(fp)[0].tolist()
-    fn_indices = np.where(fn)[0].tolist()
-    tp_mask = (y_test_cls == 1) & (y_pred == 1)
-    tn_mask = (y_test_cls == 0) & (y_pred == 0)
-    tp_indices = np.where(tp_mask)[0].tolist()
-    tn_indices = np.where(tn_mask)[0].tolist()
+dist_by_class_path = detail_dir / "test_prediction_distribution_by_class.png"
+dist_misclassified_path = detail_dir / "test_prediction_distribution_misclassified.png"
+tp_tn_dist_path = detail_dir / "test_tp_tn_distribution.png"
+for _ in [dist_by_class_path, dist_misclassified_path, tp_tn_dist_path]:
+    plt.figure(figsize=(8, 5))
+    plt.savefig(_, dpi=150)
+    plt.close()
+print("[정보][평가 5/7] 평가 리포트/보조 파일 저장")
 
-    acc_all = precision_all = recall_all = f1_all = roc_auc_all = pr_auc_all = 0.0
-    cm_all = np.zeros((2, 2), dtype=int)
-    cm_all_norm = cm_all.astype(float)
-    cm_all_path = roc_all_path = th_all_path = dist_all_path = tp_tn_all_path = detail_dir / "_.png"
-    if X_all is not None and len(X_all) > 0:
-        print("[EVAL 4/7] light_train_data 전체 데이터 평가")
-        y_prob_all = best_model.predict(X_all, batch_size=BATCH, verbose=0).reshape(-1)
-        y_pred_all = (y_prob_all >= best_th).astype(int)
-        y_all_cls = y_all.reshape(-1).astype(int)
-        acc_all = accuracy_score(y_all_cls, y_pred_all)
-        precision_all = precision_score(y_all_cls, y_pred_all, zero_division=0)
-        recall_all = recall_score(y_all_cls, y_pred_all, zero_division=0)
-        f1_all = f1_score(y_all_cls, y_pred_all, zero_division=0)
-        roc_auc_all = roc_auc_score(y_all_cls, y_prob_all)
-        fpr_all, tpr_all, _ = roc_curve(y_all_cls, y_prob_all)
-        prec_curve_all, rec_curve_all, _ = precision_recall_curve(y_all_cls, y_prob_all)
-        pr_auc_all = sk_metrics.auc(rec_curve_all, prec_curve_all)
-        cm_all = confusion_matrix(y_all_cls, y_pred_all)
-        cm_all_norm = cm_all / (cm_all.sum(axis=1, keepdims=True) + 1e-12)
-        fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-        axes[0].imshow(cm_all, cmap="Blues")
-        axes[0].set_title("Confusion Matrix (Counts) [All Data]")
-        axes[0].set_xlabel("Predicted")
-        axes[0].set_ylabel("True")
-        for i in range(2):
-            for j in range(2):
-                axes[0].text(j, i, str(cm_all[i, j]), ha="center", va="center", fontsize=14, fontweight="bold")
-        axes[1].imshow(cm_all_norm, cmap="Blues", vmin=0, vmax=1)
-        axes[1].set_title("Confusion Matrix (Normalized) [All Data]")
-        for i in range(2):
-            for j in range(2):
-                axes[1].text(j, i, f"{cm_all[i, j]}\n({cm_all_norm[i, j] * 100:.1f}%)", ha="center", va="center", fontsize=11)
-        plt.tight_layout()
-        cm_all_path = detail_dir / "all_confusion_matrix.png"
-        plt.savefig(cm_all_path, dpi=150, bbox_inches="tight")
-        plt.close()
-        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-        axes[0].plot(fpr_all, tpr_all, label=f"ROC (AUC={roc_auc_all:.4f})", lw=2)
-        axes[0].plot([0, 1], [0, 1], "k--")
-        axes[0].set_xlabel("False Positive Rate")
-        axes[0].set_ylabel("True Positive Rate")
-        axes[0].set_title("ROC Curve [All Data]")
-        axes[0].legend()
-        axes[0].grid(True, alpha=0.3)
-        axes[1].plot(rec_curve_all, prec_curve_all, label=f"PR (AUC={pr_auc_all:.4f})", lw=2)
-        axes[1].set_xlabel("Recall")
-        axes[1].set_ylabel("Precision")
-        axes[1].set_title("Precision-Recall Curve [All Data]")
-        axes[1].legend()
-        axes[1].grid(True, alpha=0.3)
-        plt.tight_layout()
-        roc_all_path = detail_dir / "all_roc_pr_curves.png"
-        plt.savefig(roc_all_path, dpi=150, bbox_inches="tight")
-        plt.close()
-        th_all_path = dist_all_path = tp_tn_all_path = detail_dir / "all_extra.png"
-        plt.savefig(th_all_path, dpi=150)
-        plt.close()
-    else:
-        print("[EVAL 4/7] light_train_data 전체 데이터 없음(스킵)")
-
-    misclass_summary = {"false_positive": {"count": len(fp_indices), "indices_sample": fp_indices[:50]}, "false_negative": {"count": len(fn_indices), "indices_sample": fn_indices[:50]}, "true_positive": {"count": len(tp_indices), "indices_sample": tp_indices[:50]}, "true_negative": {"count": len(tn_indices), "indices_sample": tn_indices[:50]}}
-    if fp_indices:
-        misclass_summary["false_positive"]["prob_mean"] = float(y_prob[fp].mean())
-        misclass_summary["false_positive"]["prob_std"] = float(y_prob[fp].std())
-    if fn_indices:
-        misclass_summary["false_negative"]["prob_mean"] = float(y_prob[fn].mean())
-        misclass_summary["false_negative"]["prob_std"] = float(y_prob[fn].std())
-    if tp_indices:
-        misclass_summary["true_positive"]["prob_mean"] = float(y_prob[tp_mask].mean())
-        misclass_summary["true_positive"]["prob_std"] = float(y_prob[tp_mask].std())
-    if tn_indices:
-        misclass_summary["true_negative"]["prob_mean"] = float(y_prob[tn_mask].mean())
-        misclass_summary["true_negative"]["prob_std"] = float(y_prob[tn_mask].std())
-
-    dist_by_class_path = detail_dir / "test_prediction_distribution_by_class.png"
-    dist_misclassified_path = detail_dir / "test_prediction_distribution_misclassified.png"
-    tp_tn_dist_path = detail_dir / "test_tp_tn_distribution.png"
-    for _ in [dist_by_class_path, dist_misclassified_path, tp_tn_dist_path]:
-        plt.figure(figsize=(8, 5))
-        plt.savefig(_, dpi=150)
-        plt.close()
-    print("[EVAL 5/7] 평가 리포트/보조 파일 저장")
-
-    eval_report = {
-        "model_run": run_name,
-        "model_path": str(best_ckpt_path),
-        "test_data_source": test_data_source_desc,
-        "all_data_source": f"1. light_train_data/{data_run_dir.name}/break_imgs.npy",
-        "evaluation_time": datetime.datetime.now().isoformat(),
-        "test_samples": n_total,
-        "class_distribution": {"normal": int(n_normal), "break": int(n_break)},
-        "threshold": float(best_th),
-        "threshold_source": "fixed_threshold",
-        "classification": {
-            "accuracy": float(acc),
-            "precision": float(precision),
-            "recall": float(recall),
-            "f1_score": float(f1),
-            "roc_auc": float(roc_auc),
-            "pr_auc": float(pr_auc),
-            "confusion_matrix": cm.tolist(),
-            "confusion_matrix_normalized": [[float(x) for x in row] for row in cm_norm.tolist()],
-            "all_data_metrics": {
-                "accuracy": float(acc_all),
-                "precision": float(precision_all),
-                "recall": float(recall_all),
-                "f1_score": float(f1_all),
-                "roc_auc": float(roc_auc_all),
-                "pr_auc": float(pr_auc_all),
-                "confusion_matrix": cm_all.tolist(),
-                "confusion_matrix_normalized": [[float(x) for x in row] for row in cm_all_norm.tolist()],
-            },
+eval_report = {
+    "model_run": run_name,
+    "model_path": str(best_ckpt_path),
+    "test_data_source": test_data_source_desc,
+    "all_data_source": f"1. light_train_data/{data_run_dir.name}/break_imgs.npy",
+    "evaluation_time": datetime.datetime.now().isoformat(),
+    "test_samples": n_total,
+    "class_distribution": {"normal": int(n_normal), "break": int(n_break)},
+    "threshold": float(best_th),
+    "threshold_source": "fixed_threshold",
+    "classification": {
+        "accuracy": float(acc),
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1_score": float(f1),
+        "roc_auc": float(roc_auc),
+        "pr_auc": float(pr_auc),
+        "confusion_matrix": cm.tolist(),
+        "confusion_matrix_normalized": [[float(x) for x in row] for row in cm_norm.tolist()],
+        "all_data_metrics": {
+            "accuracy": float(acc_all),
+            "precision": float(precision_all),
+            "recall": float(recall_all),
+            "f1_score": float(f1_all),
+            "roc_auc": float(roc_auc_all),
+            "pr_auc": float(pr_auc_all),
+            "confusion_matrix": cm_all.tolist(),
+            "confusion_matrix_normalized": [[float(x) for x in row] for row in cm_all_norm.tolist()],
         },
-        "misclassification": misclass_summary,
-        "outputs": {
-            "test_confusion_matrix": str(cm_path),
-            "test_roc_pr_curves": str(roc_path),
-            "threshold_sensitivity": str(th_sens_path),
+    },
+    "misclassification": misclass_summary,
+    "outputs": {
+        "test_confusion_matrix": str(cm_path),
+        "test_roc_pr_curves": str(roc_path),
+        "threshold_sensitivity": str(th_sens_path),
+    },
+    "threshold_sensitivity": {"n_break_true": n_break_true, "rows": threshold_sensitivity},
+}
+if config_path.exists():
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        eval_report["training_config_summary"] = {"data_source_run": cfg.get("data_source_run"), "total_epochs_trained": cfg.get("total_epochs_trained"), "loss": cfg.get("loss"), "input_shape": cfg.get("data", {}).get("input_shape") or cfg.get("model", {}).get("input_shape")}
+    except Exception:
+        pass
+report_path = detail_dir / "evaluation_report.json"
+with open(report_path, "w", encoding="utf-8") as f:
+    json.dump(eval_report, f, ensure_ascii=False, indent=2)
+print(f"저장: {report_path}")
+
+if RUNTIME_TARGET_PASS_MODE == "recall_priority":
+    overall_pass = (recall >= RUNTIME_TARGET_RECALL) and (f1 >= RUNTIME_TARGET_F1)
+else:
+    overall_pass = (
+        (precision >= RUNTIME_TARGET_PRECISION)
+        and (recall >= RUNTIME_TARGET_RECALL)
+        and (f1 >= RUNTIME_TARGET_F1)
+    )
+feedback = {"stage": "light_model", "evaluation_dir": str(detail_dir), "model_run": run_name, "pass": bool(overall_pass), "recommended_retrain": bool(not overall_pass), "pass_mode": RUNTIME_TARGET_PASS_MODE, "criteria": {"target_precision": RUNTIME_TARGET_PRECISION, "target_recall": RUNTIME_TARGET_RECALL, "target_f1": RUNTIME_TARGET_F1}, "actual": {"precision": float(precision), "recall": float(recall), "f1": float(f1), "accuracy": float(acc), "threshold": float(best_th), "fn_count": len(fn_indices)}}
+feedback_path = detail_dir / "training_feedback.json"
+with open(feedback_path, "w", encoding="utf-8") as f:
+    json.dump(feedback, f, ensure_ascii=False, indent=2)
+print(f"저장: {feedback_path}")
+print(f"[feedback] pass={overall_pass} precision={precision:.4f} recall={recall:.4f} f1={f1:.4f}")
+print("[정보][평가 6/7] 베스트 모델 갱신")
+
+models_base = Path(current_dir) / "2. light_models"
+best_alias_dir = Path(current_dir) / "best_light_model"
+best_candidate = _collect_best_candidate_from_reports(models_base, RUNTIME_BEST_TARGET_RECALL, RUNTIME_BEST_TARGET_ACCURACY)
+criteria = {
+    "target_recall": RUNTIME_BEST_TARGET_RECALL,
+    "target_accuracy": RUNTIME_BEST_TARGET_ACCURACY,
+}
+if best_candidate is None:
+    history_path = _append_best_selection_history(
+        models_base,
+        {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "action": "skip_no_candidate",
+            "criteria": criteria,
         },
-        "threshold_sensitivity": {"n_break_true": n_break_true, "rows": threshold_sensitivity},
-    }
-    if config_path.exists():
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-            eval_report["training_config_summary"] = {"data_source_run": cfg.get("data_source_run"), "total_epochs_trained": cfg.get("total_epochs_trained"), "loss": cfg.get("loss"), "input_shape": cfg.get("data", {}).get("input_shape") or cfg.get("model", {}).get("input_shape")}
-        except Exception:
-            pass
-    report_path = detail_dir / "evaluation_report.json"
-    with open(report_path, "w", encoding="utf-8") as f:
-        json.dump(eval_report, f, ensure_ascii=False, indent=2)
-    print(f"저장: {report_path}")
-
-    if args.target_pass_mode == "recall_priority":
-        overall_pass = (recall >= args.target_recall) and (f1 >= args.target_f1)
-    else:
-        overall_pass = (precision >= args.target_precision) and (recall >= args.target_recall) and (f1 >= args.target_f1)
-    feedback = {"stage": "light_model", "evaluation_dir": str(detail_dir), "model_run": run_name, "pass": bool(overall_pass), "recommended_retrain": bool(not overall_pass), "pass_mode": args.target_pass_mode, "criteria": {"target_precision": float(args.target_precision), "target_recall": float(args.target_recall), "target_f1": float(args.target_f1)}, "actual": {"precision": float(precision), "recall": float(recall), "f1": float(f1), "accuracy": float(acc), "threshold": float(best_th), "fn_count": len(fn_indices)}}
-    feedback_path = detail_dir / "training_feedback.json"
-    with open(feedback_path, "w", encoding="utf-8") as f:
-        json.dump(feedback, f, ensure_ascii=False, indent=2)
-    print(f"저장: {feedback_path}")
-    print(f"[feedback] pass={overall_pass} precision={precision:.4f} recall={recall:.4f} f1={f1:.4f}")
-    print("[EVAL 6/7] 베스트 모델 갱신")
-
-    models_base = Path(current_dir) / "2. light_models"
-    best_alias_dir = Path(current_dir) / "best_light_model"
-    best_candidate = _collect_best_candidate_from_reports(models_base, float(args.best_target_recall), float(args.best_target_accuracy))
-    criteria = {
-        "target_recall": float(args.best_target_recall),
-        "target_accuracy": float(args.best_target_accuracy),
-    }
-    if best_candidate is None:
+    )
+    _write_best_model_change_details(
+        best_alias_dir=best_alias_dir,
+        model_alias="best_light_model",
+        action="skip_no_candidate",
+        criteria=criteria,
+        selected={},
+        previous=_load_current_best_metrics(best_alias_dir),
+        history_path=history_path,
+        reason="evaluation_report 후보 없음",
+    )
+    print(f"베스트 모델 갱신 건너뜀: 후보가 없습니다. history={history_path}")
+else:
+    current_best = _load_current_best_metrics(best_alias_dir)
+    should_replace = current_best is None or _rank_key(best_candidate["metrics"], RUNTIME_BEST_TARGET_RECALL, RUNTIME_BEST_TARGET_ACCURACY) > _rank_key(current_best["metrics"], RUNTIME_BEST_TARGET_RECALL, RUNTIME_BEST_TARGET_ACCURACY)
+    selected_run_dir = models_base / best_candidate["model_run"]
+    if not selected_run_dir.exists():
         history_path = _append_best_selection_history(
             models_base,
             {
                 "timestamp": datetime.datetime.now().isoformat(),
-                "action": "skip_no_candidate",
-                "criteria": criteria,
-            },
-        )
-        _write_best_model_change_details(
-            best_alias_dir=best_alias_dir,
-            model_alias="best_light_model",
-            action="skip_no_candidate",
-            criteria=criteria,
-            selected={},
-            previous=_load_current_best_metrics(best_alias_dir),
-            history_path=history_path,
-            reason="evaluation_report 후보 없음",
-        )
-        print(f"베스트 모델 갱신 건너뜀: 후보가 없습니다. history={history_path}")
-    else:
-        current_best = _load_current_best_metrics(best_alias_dir)
-        should_replace = current_best is None or _rank_key(best_candidate["metrics"], args.best_target_recall, args.best_target_accuracy) > _rank_key(current_best["metrics"], args.best_target_recall, args.best_target_accuracy)
-        selected_run_dir = models_base / best_candidate["model_run"]
-        if not selected_run_dir.exists():
-            history_path = _append_best_selection_history(
-                models_base,
-                {
-                    "timestamp": datetime.datetime.now().isoformat(),
-                    "action": "skip_missing_selected_run_dir",
-                    "criteria": criteria,
-                    "selected": {
-                        "model_run": best_candidate["model_run"],
-                        "metrics": best_candidate["metrics"],
-                        "report_path": best_candidate["report_path"],
-                        "evaluation_time": best_candidate.get("evaluation_time"),
-                    },
-                    "previous": current_best,
-                },
-            )
-            _write_best_model_change_details(
-                best_alias_dir=best_alias_dir,
-                model_alias="best_light_model",
-                action="skip_missing_selected_run_dir",
-                criteria=criteria,
-                selected={"model_run": best_candidate["model_run"], "metrics": best_candidate["metrics"]},
-                previous=current_best,
-                history_path=history_path,
-                reason="선정 run 디렉터리가 없음",
-            )
-            print(f"베스트 모델 갱신 건너뜀: 선정 run 경로가 없습니다. history={history_path}")
-        elif should_replace:
-            _clear_best_alias_dir(best_alias_dir, preserve_files={"best_model_change_details.log"})
-            dst_run_dir = best_alias_dir / best_candidate["model_run"]
-            shutil.copytree(selected_run_dir, dst_run_dir)
-            selection_payload = {
-                "updated_at": datetime.datetime.now().isoformat(),
+                "action": "skip_missing_selected_run_dir",
                 "criteria": criteria,
                 "selected": {
                     "model_run": best_candidate["model_run"],
@@ -1482,88 +1446,128 @@ else:
                     "evaluation_time": best_candidate.get("evaluation_time"),
                 },
                 "previous": current_best,
-            }
-            with open(best_alias_dir / "best_model_selection.json", "w", encoding="utf-8") as f:
-                json.dump(selection_payload, f, ensure_ascii=False, indent=2)
-            history_path = _append_best_selection_history(
-                models_base,
-                {
-                    "timestamp": datetime.datetime.now().isoformat(),
-                    "action": "replace_best_model",
-                    **selection_payload,
-                },
-            )
-            _write_best_model_change_details(
-                best_alias_dir=best_alias_dir,
-                model_alias="best_light_model",
-                action="replace_best_model",
-                criteria=criteria,
-                selected=selection_payload["selected"],
-                previous=current_best,
-                history_path=history_path,
-                reason="후보 모델이 현재 베스트보다 우수",
-            )
-            print(
-                f"best_light_model 갱신: run={best_candidate['model_run']} "
-                f"(recall={best_candidate['metrics']['recall']:.4f}, accuracy={best_candidate['metrics']['accuracy']:.4f}) "
-                f"| saved_to: {dst_run_dir} | history: {history_path}"
-            )
-            print("베스트 모델이 새로 등록되었습니다.")
-        else:
-            history_path = _append_best_selection_history(
-                models_base,
-                {
-                    "timestamp": datetime.datetime.now().isoformat(),
-                    "action": "keep_current_best",
-                    "criteria": criteria,
-                    "selected": {
-                        "model_run": best_candidate["model_run"],
-                        "metrics": best_candidate["metrics"],
-                        "report_path": best_candidate["report_path"],
-                        "evaluation_time": best_candidate.get("evaluation_time"),
-                    },
-                    "previous": current_best,
-                },
-            )
-            _write_best_model_change_details(
-                best_alias_dir=best_alias_dir,
-                model_alias="best_light_model",
-                action="keep_current_best",
-                criteria=criteria,
-                selected={"model_run": best_candidate["model_run"], "metrics": best_candidate["metrics"]},
-                previous=current_best,
-                history_path=history_path,
-                reason="현재 베스트 모델 유지",
-            )
-            print(
-                f"best_light_model 유지: current={current_best.get('model_run') if current_best else 'None'} "
-                f"candidate={best_candidate['model_run']} | history: {history_path}"
-            )
-            print("이번 모델은 기존 베스트 모델을 넘지 못했습니다.")
-
-    fn_analysis_path = detail_dir / "fn_reduction_analysis.txt"
-    with open(fn_analysis_path, "w", encoding="utf-8") as f:
-        f.write(
-            "\n".join(
-                [
-                    "파단 미검출(FN) 감소 분석",
-                    f"FN 개수: {len(fn_indices)}",
-                    f"사용 threshold: {best_th:.4f}",
-                    "threshold_sensitivity.json 참고",
-                ]
-            )
+            },
         )
-    summary_path = detail_dir / "evaluation_summary.txt"
-    with open(summary_path, "w", encoding="utf-8") as f:
-        f.write(
-            f"Light 모델 상세 평가 요약\n"
-            f"모델 run: {run_name}\n"
-            f"테스트 샘플: {n_total}\n"
-            f"Accuracy: {acc:.4f}\n"
-            f"Precision: {precision:.4f}\n"
-            f"Recall: {recall:.4f}\n"
-            f"F1: {f1:.4f}\n"
+        _write_best_model_change_details(
+            best_alias_dir=best_alias_dir,
+            model_alias="best_light_model",
+            action="skip_missing_selected_run_dir",
+            criteria=criteria,
+            selected={"model_run": best_candidate["model_run"], "metrics": best_candidate["metrics"]},
+            previous=current_best,
+            history_path=history_path,
+            reason="선정 run 디렉터리가 없음",
         )
-    print("[EVAL 7/7] 상세 평가 완료")
-    print(f"상세 평가 결과: {detail_dir}")
+        print(f"베스트 모델 갱신 건너뜀: 선정 run 경로가 없습니다. history={history_path}")
+    elif should_replace:
+        _clear_best_alias_dir(best_alias_dir, preserve_files={"best_model_change_details.log"})
+        dst_run_dir = best_alias_dir / best_candidate["model_run"]
+        shutil.copytree(selected_run_dir, dst_run_dir)
+        selection_payload = {
+            "updated_at": datetime.datetime.now().isoformat(),
+            "criteria": criteria,
+            "selected": {
+                "model_run": best_candidate["model_run"],
+                "metrics": best_candidate["metrics"],
+                "report_path": best_candidate["report_path"],
+                "evaluation_time": best_candidate.get("evaluation_time"),
+            },
+            "previous": current_best,
+        }
+        with open(best_alias_dir / "best_model_selection.json", "w", encoding="utf-8") as f:
+            json.dump(selection_payload, f, ensure_ascii=False, indent=2)
+        history_path = _append_best_selection_history(
+            models_base,
+            {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "action": "replace_best_model",
+                **selection_payload,
+            },
+        )
+        _write_best_model_change_details(
+            best_alias_dir=best_alias_dir,
+            model_alias="best_light_model",
+            action="replace_best_model",
+            criteria=criteria,
+            selected=selection_payload["selected"],
+            previous=current_best,
+            history_path=history_path,
+            reason="후보 모델이 현재 베스트보다 우수",
+        )
+        print("\n" + "=" * 80)
+        print("🎉 베스트 모델 교체 성공!")
+        print("=" * 80)
+        print(f"✅ 새로운 베스트 모델: {best_candidate['model_run']}")
+        print(f"   - Recall: {best_candidate['metrics']['recall']:.4f}")
+        print(f"   - Accuracy: {best_candidate['metrics']['accuracy']:.4f}")
+        if current_best:
+            print(f"\n📊 이전 베스트 모델: {current_best.get('model_run', 'N/A')}")
+            print(f"   - Recall: {current_best['metrics'].get('recall', 0):.4f} → {best_candidate['metrics']['recall']:.4f}")
+            print(f"   - Accuracy: {current_best['metrics'].get('accuracy', 0):.4f} → {best_candidate['metrics']['accuracy']:.4f}")
+        print(f"\n💾 저장 위치: {dst_run_dir}")
+        print(f"📝 히스토리: {history_path}")
+        print("=" * 80 + "\n")
+    else:
+        history_path = _append_best_selection_history(
+            models_base,
+            {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "action": "keep_current_best",
+                "criteria": criteria,
+                "selected": {
+                    "model_run": best_candidate["model_run"],
+                    "metrics": best_candidate["metrics"],
+                    "report_path": best_candidate["report_path"],
+                    "evaluation_time": best_candidate.get("evaluation_time"),
+                },
+                "previous": current_best,
+            },
+        )
+        _write_best_model_change_details(
+            best_alias_dir=best_alias_dir,
+            model_alias="best_light_model",
+            action="keep_current_best",
+            criteria=criteria,
+            selected={"model_run": best_candidate["model_run"], "metrics": best_candidate["metrics"]},
+            previous=current_best,
+            history_path=history_path,
+            reason="현재 베스트 모델 유지",
+        )
+        print("\n" + "=" * 80)
+        print("ℹ️  베스트 모델 유지")
+        print("=" * 80)
+        print(f"🏆 현재 베스트 모델: {current_best.get('model_run', 'N/A')}")
+        print(f"   - Recall: {current_best['metrics'].get('recall', 0):.4f}")
+        print(f"   - Accuracy: {current_best['metrics'].get('accuracy', 0):.4f}")
+        print(f"\n🔍 후보 모델: {best_candidate['model_run']}")
+        print(f"   - Recall: {best_candidate['metrics']['recall']:.4f}")
+        print(f"   - Accuracy: {best_candidate['metrics']['accuracy']:.4f}")
+        print(f"\n❌ 결과: 후보 모델이 현재 베스트 모델을 넘지 못했습니다.")
+        print(f"📝 히스토리: {history_path}")
+        print("=" * 80 + "\n")
 
+fn_analysis_path = detail_dir / "fn_reduction_analysis.txt"
+with open(fn_analysis_path, "w", encoding="utf-8") as f:
+    f.write(
+        "\n".join(
+            [
+                "파단 미검출(FN) 감소 분석",
+                f"FN 개수: {len(fn_indices)}",
+                f"사용 threshold: {best_th:.4f}",
+                "threshold_sensitivity.json 참고",
+            ]
+        )
+    )
+summary_path = detail_dir / "evaluation_summary.txt"
+with open(summary_path, "w", encoding="utf-8") as f:
+    f.write(
+        f"Light 모델 상세 평가 요약\n"
+        f"모델 run: {run_name}\n"
+        f"테스트 샘플: {n_total}\n"
+        f"Accuracy: {acc:.4f}\n"
+        f"Precision: {precision:.4f}\n"
+        f"Recall: {recall:.4f}\n"
+        f"F1: {f1:.4f}\n"
+    )
+print("[정보][평가 7/7] 상세 평가 완료")
+print(f"상세 평가 결과: {detail_dir}")

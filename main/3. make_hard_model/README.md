@@ -51,6 +51,8 @@ Hard 모델 데이터 생성/학습 폴더입니다.
 
 ## 옵션 설정 방법
 
+학습용 서브 파라미터(평가 기준 포함)는 CLI 인자 대신 각 스크립트의 `USER_OPTIONS`에서 관리합니다.
+
 ### 1차(`2. make_hard_model_1st.py`)
 
 코드 상단 `USER_OPTIONS`에서 직접 수정:
@@ -94,10 +96,6 @@ bash "main/3. make_hard_model/2. make_hard_model_1st_gpu.sh"
 
 - `HARD1_EPOCHS`
 - `HARD1_BATCH_SIZE`
-- `HARD1_TARGET_MEAN_IOU`
-- `HARD1_TARGET_IOU_05`
-- `HARD1_TARGET_IOU_07`
-- `HARD1_PASS_MODE`
 
 ### 2차 학습 (WSL2 GPU)
 
@@ -112,10 +110,6 @@ bash "main/3. make_hard_model/3. make_hard_model_2nd_gpu.sh"
 - `HARD2_EPOCHS`
 - `HARD2_BATCH_SIZE`
 - `HARD2_LR`
-- `HARD2_TARGET_OVERALL_BEST_F1`
-- `HARD2_TARGET_OVERALL_AUC`
-- `HARD2_TARGET_OVERALL_SEPARATION`
-- `HARD2_PASS_MODE`
 
 ### 특정 1차 모델 선택하여 2차 학습
 
@@ -134,3 +128,4 @@ python "main/3. make_hard_model/3. make_hard_model_2nd.py" --first-stage-model "
 
 - WSL 가상환경(`venv_gpu` 또는 `venv_wsl2`)에 TensorFlow 설치 필요
 - 2차 학습 전 1차 best 체크포인트(`best_x/y/z.keras`) 필요
+- 상세 평가 로그는 `[정보][평가 1/7]` ~ `[정보][평가 7/7]` 형식으로 출력

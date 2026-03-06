@@ -1,20 +1,20 @@
 # 1. make_data set
 
-전주 파단 예측용 학습 데이터셋을 만드는 전처리 파이프라인입니다.  
-이 폴더는 DB 조회 -> 원본 수집 -> 정규화/병합 -> 수동 보정(ROI) 순서로 동작합니다.
+전주 파단 예측용 학습 데이터셋 전처리 파이프라인입니다.  
+실행 흐름은 `DB 조회 -> 원본 수집 -> 정규화/병합 -> ROI 수동 보정` 순서입니다.
 
 ## 전체 흐름
 
 1. `1. get_project_info_list.py`  
 프로젝트 목록과 분석 진행 통계를 서버별로 수집
 2. `2. get_anal_pole_list.py`  
-분석 완료 전주 목록(파단/정상 라벨 포함)을 수집
+분석 완료 전주 목록(파단/정상 라벨 포함) 수집
 3. `3. get_raw_pole_data.py`  
-원본 측정 CSV(IN/OUT)와 전주별 info JSON 저장
+원본 측정 CSV(IN/OUT)와 전주별 정보 JSON 저장
 4. `4. merge_data.py`  
 원본 CSV를 학습용 격자 데이터(`*_OUT_processed.csv`)로 변환
 5. `5. edit_data.py`  
-GUI에서 ROI(관심영역) 수동 보정 및 삭제/확정
+GUI에서 ROI(관심영역) 수동 보정 및 삭제 처리
 
 보조 점검 스크립트:
 - `3.1. check_raw_pole_data_info.py`
@@ -146,6 +146,11 @@ python "4. merge_data.py" --normal-ratio 10
 python "4.1. check_merge_data_info.py" --no-plot
 python "5. edit_data.py"
 ```
+
+## 로그 형식
+
+- 주요 실행 로그는 `[정보]`, `[경고]`, `[오류]` 접두어를 사용합니다.
+- 단계별 시작/완료 구분선을 함께 출력합니다.
 
 ## 참고
 

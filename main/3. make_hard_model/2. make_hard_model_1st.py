@@ -15,20 +15,22 @@ import os
 import sys
 import subprocess
 import shutil
-import shlex
 from pathlib import Path
 
 # Windows 인코딩 문제 해결
 if os.name == 'nt':  # Windows
     os.environ['PYTHONIOENCODING'] = 'utf-8'
-    os.environ['PYTHONUTF8'] = '1'
-
-def safe_subprocess_run(*args, **kwargs):
-    """Windows에서 인코딩 안전한 subprocess 실행"""
-    if os.name == 'nt':  # Windows
-        kwargs.setdefault('encoding', 'utf-8')
-        kwargs.setdefault('errors', 'replace')
-    return subprocess.run(*args, **kwargs)
+    # subprocess 인코딩 설정
+    import locale
+    try:
+        locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+    except locale.Error:
+        # Windows 환경에서 C.UTF-8이 없을 수 있음
+        try:
+            locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+        except locale.Error:
+            # 설정 불가 시 무시
+            pass
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -38,97 +40,87 @@ from logger import get_logger, log_event
 
 LOGGER = get_logger("train_hard_model_1st")
 
-_MOJIBAKE_TOKENS = ()
-
-
-def _normalize_log_message(text: str) -> str:
-    if not text:
-        return text
-    if "?" in text and any(ord(ch) > 127 for ch in text):
-        ascii_only = "".join(ch if ord(ch) < 128 else " " for ch in text)
-        ascii_only = " ".join(ascii_only.split())
-        return f"[legacy-text-normalized] {ascii_only}" if ascii_only else "[legacy-text-normalized]"
-    return text
-
-
 def _log_print(*args, **kwargs):
     sep = kwargs.get("sep", " ")
     text = sep.join(str(a) for a in args)
-    normalized = _normalize_log_message(text)
-    if not normalized:
+    if not text:
         return
-    for line in normalized.splitlines() or [""]:
+    for line in text.splitlines() or [""]:
         log_event(LOGGER, "INFO", "GENERAL", line)
 
 
 print = _log_print
 
 def try_wsl2_gpu_script():
-    """WSL2에서 GPU 스크립트 실행을 시도합니다."""
+    """Try running GPU script in WSL2."""
     if sys.platform != "win32":
         return False
     allow_cpu_fallback = os.environ.get("HARD_WSL_FALLBACK_CPU", "0") == "1"
 
     _script_dir = os.path.dirname(os.path.abspath(__file__))
-    _project_root = Path(_script_dir).parents[1]  # 2단계 위로 올라가서 프로젝트 루트
+    _project_root = Path(_script_dir).parents[1]  # project root
     _sh_path = Path(_script_dir) / "2. make_hard_model_1st_gpu.sh"
-    
+
     if not _sh_path.exists():
-        print(f"GPU 스크립트를 찾을 수 없습니다: {_sh_path}")
+        print(f"[오류] GPU 스크립트를 찾을 수 없습니다: {_sh_path}")
         return False
-    
+
     try:
-        # WSL2가 설치되어 있는지 확인
-        wsl_check = subprocess.run(["wsl", "--status"], 
-                                 capture_output=True, text=True, timeout=10)
+        wsl_check = subprocess.run(
+            ["wsl", "--status"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
         if wsl_check.returncode != 0:
-            print("WSL2가 설치되어 있지 않거나 실행할 수 없습니다.")
+            print("[오류] WSL2를 사용할 수 없습니다.")
             return False
-            
+
         _abs = _sh_path.resolve()
         _drive = _abs.drive
         _wsl_path = ("/mnt/" + _drive[0].lower() + str(_abs)[len(_drive):].replace("\\", "/")) if _drive else str(_abs).replace("\\", "/")
-        
+
         print("=" * 60)
-        print("WSL2에서 GPU 스크립트 실행을 시도합니다...")
+        print("[정보] WSL2 GPU 스크립트 실행 시도")
         print(f"스크립트 경로: {_wsl_path}")
         print("=" * 60)
-        
-        # 현재 스크립트의 모든 인수를 전달 (--local, --cpu 제외)
+
         filtered_args = [a for a in sys.argv[1:] if a not in ["--local", "--cpu"]]
-        arg_str = " ".join(shlex.quote(a) for a in filtered_args)
-        cmd = f"bash {shlex.quote(_wsl_path)} {arg_str}".strip()
-        
-        ret = subprocess.run(["wsl", "bash", "-lc", cmd], cwd=str(_project_root))
-        
+
+        ret = subprocess.run(
+            ["wsl", "bash", _wsl_path] + filtered_args,
+            cwd=str(_project_root),
+        )
+
         if ret.returncode == 0:
             print("=" * 60)
-            print("WSL2 GPU 스크립트가 성공적으로 완료되었습니다!")
+            print("[정보] WSL2 GPU 스크립트가 정상 완료되었습니다.")
             print("=" * 60)
             sys.exit(0)
         else:
             print("=" * 60)
-            print(f"WSL2 GPU 스크립트가 실패했습니다 (exit code: {ret.returncode})")
+            print(f"[오류] WSL2 GPU 스크립트 실행 실패 (exit code: {ret.returncode})")
             if allow_cpu_fallback:
-                print("CPU 모드로 fallback합니다... (HARD_WSL_FALLBACK_CPU=1)")
+                print("[정보] CPU 모드로 전환합니다. (HARD_WSL_FALLBACK_CPU=1)")
                 print("=" * 60)
                 return False
-            print("같은 작업을 CPU로 재실행하지 않습니다(기본). 필요 시 --cpu 로 CPU만 실행하거나, HARD_WSL_FALLBACK_CPU=1 로 fallback을 켜세요.")
+            print("[정보] 기본 설정상 CPU 재실행은 하지 않습니다. 필요 시 --cpu 또는 HARD_WSL_FALLBACK_CPU=1을 사용하세요.")
             print("=" * 60)
             sys.exit(ret.returncode)
-            
+
     except subprocess.TimeoutExpired:
-        print("WSL2 상태 확인 시간 초과. CPU 모드로 fallback합니다.")
+        print("[오류] WSL2 상태 확인 시간 초과로 CPU 모드로 전환합니다.")
         return False
     except FileNotFoundError:
-        print("WSL2가 설치되어 있지 않습니다. CPU 모드로 fallback합니다.")
+        print("[오류] WSL2가 설치되어 있지 않아 CPU 모드로 전환합니다.")
         return False
     except Exception as e:
-        print(f"WSL2 실행 중 오류 발생: {e}")
-        print("CPU 모드로 fallback합니다.")
+        print(f"[오류] WSL2 실행 오류: {e}")
+        print("[정보] CPU 모드로 전환합니다.")
         return False
 
-# 명령행 옵션 처리
 _run_local = "--local" in sys.argv
 _force_cpu = "--cpu" in sys.argv
 
@@ -146,11 +138,14 @@ if not _run_local and not _force_cpu:
 
 # CPU 모드로 계속 진행
 if _run_local:
-    print("로컬 모드: CPU로 실행합니다")
+    print("[정보] 로컬 모드: WSL 실행 없이 현재 환경에서 진행합니다.")
 elif _force_cpu:
-    print("CPU 강제 모드: GPU 스크립트를 건너뛰고 CPU로 실행합니다")
+    print("[정보] CPU 강제 모드: GPU 스크립트를 건너뜁니다.")
 else:
-    print("CPU 모드로 fallback하여 실행합니다")
+    if sys.platform == "win32":
+        print("[정보] CPU 모드로 실행합니다.")
+    else:
+        print("[정보] 비-Windows 환경: 현재 환경에서 계속 실행합니다. (GPU 가능 시 사용)")
 
 import datetime
 import argparse
@@ -163,7 +158,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# TensorFlow import ? Windows CUDA PATH??.
+# TensorFlow import 시 Windows CUDA PATH 처리.
 if sys.platform == "win32":
     cuda_path = os.environ.get("CUDA_PATH")
     if cuda_path:
@@ -176,26 +171,26 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from sklearn.model_selection import train_test_split
 
-# GPU ?
+# GPU 확인
 gpus = tf.config.list_physical_devices("GPU")
 if gpus:
     try:
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
-        print("GPU ?:", [gpu.name for gpu in gpus])
+        print("GPU 목록:", [gpu.name for gpu in gpus])
     except RuntimeError as e:
-        print("GPU ? ?:", e)
+        print("GPU 설정 오류:", e)
 else:
-    print("GPU ?, CPU ?")
+    print("GPU 없음, CPU 사용")
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 BASE_SEED = 42
 
 # ============================================================================
-# 1) ??? / 
+# 1) 데이터 경로 / 로드
 # ============================================================================
 
-# ?1. hard_train_data  run????5. train_data ?)
+# 1. hard_train_data run 우선, 없으면 5. train_data 사용
 data_root = Path(current_dir) / "5. train_data"
 train_dir = data_root / "train"
 test_dir = data_root / "test"
@@ -206,7 +201,7 @@ test_lab = test_dir / "break_labels_test.npy"
 
 
 def get_latest_hard_train_dir(base: Path):
-    """base(1. hard_train_data)? train/test NPY ?  run???."""
+    """base(1. hard_train_data)에서 train/test NPY가 있는 최신 run 디렉터리를 찾습니다."""
     if base is None or not base.exists():
         return None
     try:
@@ -244,7 +239,7 @@ def split_train_val(X, y, test_size=0.2, random_state=BASE_SEED):
 
 
 # ============================================================================
-# 3) ROI ? ?? / ??
+# 3) ROI 대상 분리 / 변환
 # ============================================================================
 
 def slice_roi_targets(y, roi_idx: int, K: int):
@@ -263,21 +258,21 @@ def slice_roi_targets(y, roi_idx: int, K: int):
 
 BATCH = 32
 AUTOTUNE = tf.data.AUTOTUNE
-# ? ??/? flip  ? ??(? ?? ?
+# 좌/우 및 상/하 flip 증강 옵션 (기본: 사용 안 함)
 USE_AUGMENTATION = False
 
 
 # ============================================================================
-# ???? ( ???? ?)
+# 사용자 옵션 (학습 파라미터)
 # ============================================================================
 
 USER_OPTIONS = {
     "core": {
-        "epochs": 300,
-        "batch_size": 32,
-        "learning_rate": 1e-3,
-        "dropout": 0.3,
-        "pred_boxes_per_axis": 3,
+        "epochs": 300,  # 전체 학습 반복 횟수
+        "batch_size": 32,  # 한 번에 처리할 샘플 수
+        "learning_rate": 1e-3,  # 학습률 (가중치 업데이트 크기)
+        "dropout": 0.45,  # 과적합 방지를 위한 드롭아웃 비율 (0.0~1.0)
+        "pred_boxes_per_axis": 3,  # 각 축당 예측할 바운딩 박스 개수
     },
     "sub": {
         "use_augmentation": False,
@@ -294,8 +289,8 @@ USER_OPTIONS = {
 
 def _augment_flip(img: tf.Tensor, y_reg: tf.Tensor, K: int) -> Tuple[tf.Tensor, tf.Tensor]:
     """
-    ???(degree) / ?(height) .
-    bbox [hc, hw, dc, dw] ??? ?.
+    좌우(degree) / 상하(height) 뒤집기.
+    bbox [hc, hw, dc, dw] 좌표도 함께 변환.
     - Horizontal flip (axis 1): dc -> 1 - dc
     - Vertical flip (axis 0): hc -> 1 - hc
     """
@@ -328,7 +323,7 @@ def make_ds_roi(X, y, roi_idx: int, K: int, training: bool, seed: int):
 
 
 # ============================================================================
-# 4) ResNet18-like 紐⑤뜽 ( 異쒕젰 5*P: hc, hw, dc, dw, confidence)
+# 4) ResNet18-like 모델 (출력 5*P: hc, hw, dc, dw, confidence)
 # ============================================================================
 
 def basic_block(x, filters, stride=(1, 1), prefix="bb"):
@@ -400,15 +395,15 @@ def iou_2d_from_center_width(pred, true, eps=1e-7):
     return inter / (union + eps)
 
 
-# conf_loss: bbox  ?? 0.3. IoU threshold  conf_loss 
+# conf_loss: bbox IoU가 0.3 이상일 때 confidence loss 적용
 CONF_WEIGHT = 0.0
 IOU_THRESHOLD_FOR_CONF = 0.3
 
-# ?IoU  ??
-# - IOU_LOSS_WEIGHT: best IoU ?(1 - IoU)
-# - ANCHOR_REG_WEIGHT: anchor(box ??GToU??  #   dead anchor(box_index=0) ????
-IOU_LOSS_WEIGHT = 0.4   # (??? )
-ANCHOR_REG_WEIGHT = 0.5  # (??? )
+# IoU 관련 가중치
+# - IOU_LOSS_WEIGHT: best IoU 손실 (1 - IoU)
+# - ANCHOR_REG_WEIGHT: anchor(box) 정규화 + dead anchor 패널티
+IOU_LOSS_WEIGHT = 0.4   # (IoU 손실 가중치)
+ANCHOR_REG_WEIGHT = 0.5  # (anchor 정규화 가중치)
 
 
 def huber_bestpair_loss(P: int, K: int, delta=0.05, conf_weight=CONF_WEIGHT, iou_threshold_for_conf=IOU_THRESHOLD_FOR_CONF):
@@ -443,7 +438,7 @@ def huber_bestpair_loss(P: int, K: int, delta=0.05, conf_weight=CONF_WEIGHT, iou
         # best-pair IoU per sample
         best_iou_per_sample = tf.reduce_max(iou_masked, axis=[1, 2])
 
-        # (1) confidence loss: IoU threshold ? conf_loss ??( )
+        # (1) confidence loss: IoU threshold 이상일 때 conf_loss 적용
         conf_ok = tf.cast(
             (best_iou_per_sample >= iou_threshold_for_conf) & (has_gt > 0), tf.float32
         )
@@ -452,23 +447,24 @@ def huber_bestpair_loss(P: int, K: int, delta=0.05, conf_weight=CONF_WEIGHT, iou
         denom_conf = tf.reduce_sum(conf_ok) + 1e-7
         conf_loss = tf.reduce_sum(conf_loss_per_sample * conf_ok) / denom_conf
 
-        # (2) IoU  ??? best IoU          #     L_iou = mean(1 - best_iou) over samples with GT
+        # (2) IoU 손실: best IoU 기반 (L_iou = mean(1 - best_iou))
         iou_loss = tf.reduce_sum((1.0 - best_iou_per_sample) * has_gt) / denom
 
-        # (3) anchor(box)  ??
-        #     anchor p ??anchor IoU GT huber ??
-        #     ??anchor(box 0) ?????  anchor ????????
+        # (3) anchor(box) 정규화
+        #     anchor별로 가장 IoU가 높은 GT에 대해 Huber 적용
+        #     dead anchor(box index=0) 패널티 포함
         # m: (B, K) 1/0 mask, iou_mat: (B, P, K)
-        # GT ????? anchor IoU GT index ??        iou_mat_pos = tf.where(m[:, None, :] > 0, iou_mat, tf.zeros_like(iou_mat))
+        # GT 기준으로 anchor별 best IoU GT index 계산
+        iou_mat_pos = tf.where(m[:, None, :] > 0, iou_mat, tf.zeros_like(iou_mat))
         anchor_best_gt_idx = tf.argmax(iou_mat_pos, axis=2, output_type=tf.int32)  # (B, P)
         gt_for_anchor = tf.gather(gt, anchor_best_gt_idx, batch_dims=1)  # (B, P, 4)
-        # Hub er(reduction=NONE)?? (B, P) ??.
+        # Huber(reduction=NONE)로 (B, P) 손실 계산
         per_anchor_huber = huber(gt_for_anchor, pred_bbox)  # (B, P)
         anchor_reg_per_sample = tf.reduce_mean(per_anchor_huber, axis=1)  # (B,)
         anchor_reg_loss = tf.reduce_sum(anchor_reg_per_sample * has_gt) / denom
 
-        # (4) dead anchor ??        #     anchormax IoU ? ( <0.05)  ??
-        #     box_index=0 ? ??anchor??
+        # (4) dead anchor 패널티: anchor max IoU < 0.05
+        #     box_index=0도 dead anchor로 처리
         anchor_max_iou = tf.reduce_max(iou_mat_pos, axis=2)  # (B, P)
         dead_anchor_mask = tf.cast(anchor_max_iou < 0.05, tf.float32)
         dead_anchor_penalty_per_sample = tf.reduce_mean(dead_anchor_mask, axis=1)  # (B,)
@@ -507,11 +503,11 @@ def bbox_iou_metric_maxPK(P: int, K: int, eps=1e-8):
 
 
 # ============================================================================
-# 6)  / ??
+# 6) 경로 / 콜백
 # ============================================================================
 
 run_dir_base = Path(current_dir) / "2. hard_models_1st"
-run_dir = run_dir_base / "dummy"  # main()??timestamp
+run_dir = run_dir_base / "dummy"  # main()에서 timestamp로 덮어씀
 ckpt_dir = run_dir / "checkpoints"
 MONITOR = "val_bbox_iou"
 MODE = "max"
@@ -541,8 +537,8 @@ def make_callbacks(axis: str):
 
 def build_and_compile_model(axis: str, input_shape, P: int, K: int, dropout: float, learning_rate: float):
     """
-     ResNet18-like ??
-    - dropout, learning_rate, ? ???? ?.
+     ResNet18-like 모델 구성
+    - dropout, learning_rate 등 하이퍼파라미터 반영.
     """
     m = build_resnet18_like(
         input_shape=input_shape,
@@ -662,7 +658,7 @@ def load_best_or_current(best_ckpt_path, fallback_model, P: int, K: int):
     if Path(best_ckpt_path).exists():
         print("Loading best model:", best_ckpt_path)
         m = keras.models.load_model(str(best_ckpt_path), compile=False)
-        #  ?????????, conf_weight 
+        # 컴파일 필요: loss 재설정, conf_weight 반영
         m.compile(
             optimizer=keras.optimizers.Adam(1e-3),
             loss=huber_bestpair_loss(
@@ -1089,13 +1085,21 @@ def _update_best_hard1_model(models_base: Path, best_alias_dir: Path, target_mea
             history_path=history_path,
             reason="후보 모델이 현재 베스트보다 우수",
         )
-        print(
-            f"best_hard_model_1st 갱신: run={candidate['model_run']} "
-            f"(avg_mean_iou={candidate['metrics']['avg_mean_best_iou']:.4f}, "
-            f"iou0.5={candidate['metrics']['avg_ratio_iou_0_5']:.4f}, iou0.7={candidate['metrics']['avg_ratio_iou_0_7']:.4f}) "
-            f"| saved_to: {dst_run_dir} | history: {history_path}"
-        )
-        print("베스트 모델이 새로 등록되었습니다.")
+        print("\n" + "=" * 80)
+        print("🎉 베스트 모델 교체 성공!")
+        print("=" * 80)
+        print(f"✅ 새로운 베스트 모델: {candidate['model_run']}")
+        print(f"   - Avg Mean IoU: {candidate['metrics']['avg_mean_best_iou']:.4f}")
+        print(f"   - IoU ≥ 0.5: {candidate['metrics']['avg_ratio_iou_0_5']:.4f}")
+        print(f"   - IoU ≥ 0.7: {candidate['metrics']['avg_ratio_iou_0_7']:.4f}")
+        if current_best:
+            print(f"\n📊 이전 베스트 모델: {current_best.get('model_run', 'N/A')}")
+            print(f"   - Avg Mean IoU: {current_best['metrics'].get('avg_mean_best_iou', 0):.4f} → {candidate['metrics']['avg_mean_best_iou']:.4f}")
+            print(f"   - IoU ≥ 0.5: {current_best['metrics'].get('avg_ratio_iou_0_5', 0):.4f} → {candidate['metrics']['avg_ratio_iou_0_5']:.4f}")
+            print(f"   - IoU ≥ 0.7: {current_best['metrics'].get('avg_ratio_iou_0_7', 0):.4f} → {candidate['metrics']['avg_ratio_iou_0_7']:.4f}")
+        print(f"\n💾 저장 위치: {dst_run_dir}")
+        print(f"📝 히스토리: {history_path}")
+        print("=" * 80 + "\n")
     else:
         history_path = _append_best_hard1_history(
             models_base,
@@ -1117,11 +1121,20 @@ def _update_best_hard1_model(models_base: Path, best_alias_dir: Path, target_mea
             history_path=history_path,
             reason="현재 베스트 모델 유지",
         )
-        print(
-            f"best_hard_model_1st 유지: current={current_best.get('model_run') if current_best else 'None'} "
-            f"candidate={candidate['model_run']} | history: {history_path}"
-        )
-        print("이번 모델은 기존 베스트 모델을 넘지 못했습니다.")
+        print("\n" + "=" * 80)
+        print("ℹ️  베스트 모델 유지")
+        print("=" * 80)
+        print(f"🏆 현재 베스트 모델: {current_best.get('model_run', 'N/A')}")
+        print(f"   - Avg Mean IoU: {current_best['metrics'].get('avg_mean_best_iou', 0):.4f}")
+        print(f"   - IoU ≥ 0.5: {current_best['metrics'].get('avg_ratio_iou_0_5', 0):.4f}")
+        print(f"   - IoU ≥ 0.7: {current_best['metrics'].get('avg_ratio_iou_0_7', 0):.4f}")
+        print(f"\n🔍 후보 모델: {candidate['model_run']}")
+        print(f"   - Avg Mean IoU: {candidate['metrics']['avg_mean_best_iou']:.4f}")
+        print(f"   - IoU ≥ 0.5: {candidate['metrics']['avg_ratio_iou_0_5']:.4f}")
+        print(f"   - IoU ≥ 0.7: {candidate['metrics']['avg_ratio_iou_0_7']:.4f}")
+        print(f"\n❌ 결과: 후보 모델이 현재 베스트 모델을 넘지 못했습니다.")
+        print(f"📝 히스토리: {history_path}")
+        print("=" * 80 + "\n")
 
 
 # ============================================================================
@@ -1132,21 +1145,14 @@ def main():
     global run_dir, ckpt_dir, train_dir, test_dir, train_seq, train_lab, test_seq, test_lab
     global BATCH, USE_AUGMENTATION, CONF_WEIGHT, IOU_LOSS_WEIGHT, ANCHOR_REG_WEIGHT
 
-    parser = argparse.ArgumentParser(description="Hard 1?bbox  ?")
-    parser.add_argument("--exp", type=int, default=None, help=argparse.SUPPRESS)  # ? ???)
-    parser.add_argument("--epochs", type=int, default=USER_OPTIONS["core"]["epochs"], help="? epoch")
-    parser.add_argument("--batch-size", type=int, default=USER_OPTIONS["core"]["batch_size"], help=" ?")
+    parser = argparse.ArgumentParser(description="Hard 1차 bbox 모델 학습")
+    parser.add_argument("--exp", type=int, default=None, help=argparse.SUPPRESS)  # 내부 실험용
+    parser.add_argument("--epochs", type=int, default=USER_OPTIONS["core"]["epochs"], help="학습 epoch")
+    parser.add_argument("--batch-size", type=int, default=USER_OPTIONS["core"]["batch_size"], help="배치 크기")
     parser.add_argument("--learning-rate", type=float, default=USER_OPTIONS["core"]["learning_rate"], help="학습률")
     parser.add_argument("--dropout", type=float, default=USER_OPTIONS["core"]["dropout"], help="dropout")
-    parser.add_argument("--pred-boxes-per-axis", type=int, default=USER_OPTIONS["core"]["pred_boxes_per_axis"], help=" ?  (P)")
-    parser.add_argument("--use-augmentation", action="store_true", default=USER_OPTIONS["sub"]["use_augmentation"], help="flip  ?")
-    parser.add_argument("--iou-loss-weight", type=float, default=USER_OPTIONS["sub"]["iou_loss_weight"], help="IoU  ? ")
-    parser.add_argument("--anchor-reg-weight", type=float, default=USER_OPTIONS["sub"]["anchor_reg_weight"], help="anchor ?? ? ")
-    parser.add_argument("--run-tag", type=str, default="", help="run ??suffix")
-    parser.add_argument("--target-mean-best-iou", type=float, default=USER_OPTIONS["sub"]["target_mean_best_iou"])
-    parser.add_argument("--target-ratio-iou-0-5", type=float, default=USER_OPTIONS["sub"]["target_ratio_iou_0_5"])
-    parser.add_argument("--target-ratio-iou-0-7", type=float, default=USER_OPTIONS["sub"]["target_ratio_iou_0_7"])
-    parser.add_argument("--target-pass-mode", type=str, choices=["all_axes", "average"], default=USER_OPTIONS["sub"]["target_pass_mode"])
+    parser.add_argument("--pred-boxes-per-axis", type=int, default=USER_OPTIONS["core"]["pred_boxes_per_axis"], help="축당 예측 박스 수 (P)")
+    parser.add_argument("--run-tag", type=str, default="", help="run 이름 suffix")
     args = parser.parse_args()
     # Data path: prefer latest run under 1. hard_train_data, fallback to 5. train_data
     hard_data_base = Path(current_dir) / "1. hard_train_data"
@@ -1158,17 +1164,21 @@ def main():
         train_lab = train_dir / "break_labels_train.npy"
         test_seq = test_dir / "break_imgs_test.npy"
         test_lab = test_dir / "break_labels_test.npy"
-        print("? ??? hard run):", data_run_dir)
+        print("사용 데이터 run (hard):", data_run_dir)
     else:
-        print("1. hard_train_data run???  5. train_data fallback ?")
+        print("1. hard_train_data run 없음, 5. train_data로 fallback")
 
     BATCH = int(args.batch_size)
-    USE_AUGMENTATION = bool(args.use_augmentation)
+    USE_AUGMENTATION = bool(USER_OPTIONS["sub"]["use_augmentation"])
     CONF_WEIGHT = 0.0
-    IOU_LOSS_WEIGHT = float(args.iou_loss_weight)
-    ANCHOR_REG_WEIGHT = float(args.anchor_reg_weight)
+    IOU_LOSS_WEIGHT = float(USER_OPTIONS["sub"]["iou_loss_weight"])
+    ANCHOR_REG_WEIGHT = float(USER_OPTIONS["sub"]["anchor_reg_weight"])
+    TARGET_MEAN_IOU = float(USER_OPTIONS["sub"]["target_mean_best_iou"])
+    TARGET_IOU_05 = float(USER_OPTIONS["sub"]["target_ratio_iou_0_5"])
+    TARGET_IOU_07 = float(USER_OPTIONS["sub"]["target_ratio_iou_0_7"])
+    TARGET_PASS_MODE = str(USER_OPTIONS["sub"]["target_pass_mode"])
 
-    print("? ?:")
+    print("[정보] 학습 설정:")
     print("  P:", int(args.pred_boxes_per_axis), "batch:", BATCH, "use_aug:", USE_AUGMENTATION)
     print("  lr:", float(args.learning_rate), "dropout:", float(args.dropout))
     print("  conf_weight:", CONF_WEIGHT, "(fixed)", "iou_loss_weight:", IOU_LOSS_WEIGHT, "anchor_reg_weight:", ANCHOR_REG_WEIGHT)
@@ -1188,10 +1198,14 @@ def main():
     )
     duplicate_run = _find_duplicate_hard1_run(run_dir_base, signature)
     if duplicate_run is not None:
-        print(
-            f" ? ?:  run '{duplicate_run}'? ???? ???? "
-            "? ?? ?/??????"
-        )
+        print("\n" + "=" * 80)
+        print("⚠️  중복 실행 방지")
+        print("=" * 80)
+        print(f"🔍 감지된 중복 run: {duplicate_run}")
+        print(f"📋 동일한 학습 설정으로 이미 실행된 run이 존재합니다.")
+        print(f"💡 중복 실행을 방지하기 위해 학습을 건너뜁니다.")
+        print(f"📂 기존 run 위치: {run_dir_base / duplicate_run}")
+        print("=" * 80 + "\n")
         return
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
@@ -1209,8 +1223,8 @@ def main():
 
     if not train_seq.exists() or not train_lab.exists():
         raise FileNotFoundError(
-            f"? ????????: {train_seq}, {train_lab}\n"
-            f"? 1. set_hard_train_data.py????hard_train_data/<run>/train,test NPY?????"
+            f"학습 데이터가 없습니다: {train_seq}, {train_lab}\n"
+            f"먼저 1. set_hard_train_data.py로 hard_train_data/<run>/train,test NPY를 생성하세요."
         )
 
     X, y, X_test, y_test, K = load_data()
@@ -1223,7 +1237,7 @@ def main():
     P = int(args.pred_boxes_per_axis)
     EPOCHS = int(args.epochs)
 
-    # ?????
+    # 학습 설정 기록
     training_config = {
         "timestamp": timestamp,
         "model_run": run_dir.name,
@@ -1271,9 +1285,9 @@ def main():
     }
     with open(run_dir / "training_config.json", "w", encoding="utf-8") as f:
         json.dump(training_config, f, ensure_ascii=False, indent=2)
-    print("????", run_dir / "training_config.json")
+    print("설정 저장:", run_dir / "training_config.json")
 
-    # fallback  (??????
+    # fallback 모델(베스트 로딩 실패 시)
     model_x = build_resnet18_like(
         input_shape=X_train.shape[1:],
         pred_num=P,
@@ -1311,11 +1325,12 @@ def main():
         history = model.fit(ds_train, validation_data=ds_val, epochs=EPOCHS, callbacks=callbacks, verbose=1)
         histories[axis] = {k: [float(v) for v in vals] for k, vals in history.history.items()}
 
-    # ??    seed_test = BASE_SEED + 999
+    # 테스트용 seed
     best_x = load_best_or_current(ckpt_dir / "best_x.keras", model_x, P=P, K=K)
     best_y = load_best_or_current(ckpt_dir / "best_y.keras", model_y, P=P, K=K)
     best_z = load_best_or_current(ckpt_dir / "best_z.keras", model_z, P=P, K=K)
 
+    seed_test = BASE_SEED + 1000
     for name, m, roi_idx in [("X", best_x, 0), ("Y", best_y, 1), ("Z", best_z, 2)]:
         ds_t = make_ds_roi(X_test, y_test, roi_idx=roi_idx, K=K, training=False, seed=seed_test)
         res = m.evaluate(ds_t, verbose=1)
@@ -1323,7 +1338,7 @@ def main():
 
     out_dir = run_dir / "eval_bestpair"
     out_dir.mkdir(parents=True, exist_ok=True)
-    print(" 寃곌낵 ", out_dir)
+    print("평가 결과:", out_dir)
     res_x = eval_bbox_roi_bestpair(best_x, X_test, y_test, roi_idx=0, K=K, P=P, batch=BATCH, save_dir=out_dir, prefix="x_")
     res_y = eval_bbox_roi_bestpair(best_y, X_test, y_test, roi_idx=1, K=K, P=P, batch=BATCH, save_dir=out_dir, prefix="y_")
     res_z = eval_bbox_roi_bestpair(best_z, X_test, y_test, roi_idx=2, K=K, P=P, batch=BATCH, save_dir=out_dir, prefix="z_")
@@ -1337,34 +1352,32 @@ def main():
     print("\n" + "=" * 60)
     print(f"상세 평가 (저장: {run_dir / 'evaluate'})")
     print("=" * 60)
-    print("[EVAL 1/7] hard 1차 평가 스크립트 실행")
+    print("[정보][평가 1/7] hard 1차 평가 스크립트 실행")
     local_eval_dir = _run_stage1_evaluation(
         run_dir=run_dir,
         axis_results={"x": res_x, "y": res_y, "z": res_z},
-        target_mean_iou=float(args.target_mean_best_iou),
-        target_iou05=float(args.target_ratio_iou_0_5),
-        target_iou07=float(args.target_ratio_iou_0_7),
-        pass_mode=str(args.target_pass_mode),
+        target_mean_iou=TARGET_MEAN_IOU,
+        target_iou05=TARGET_IOU_05,
+        target_iou07=TARGET_IOU_07,
+        pass_mode=TARGET_PASS_MODE,
     )
-    print("[EVAL 2/7] 평가 결과를 run 폴더 내부로 동기화")
-    print("[EVAL 3/7] training_feedback/evaluation_metrics 확인")
+    print("[정보][평가 2/7] 평가 결과를 run 폴더 내부로 동기화")
+    print("[정보][평가 3/7] training_feedback/evaluation_metrics 확인")
     print(f"저장: {local_eval_dir / 'training_feedback.json'}")
     print(f"저장: {local_eval_dir / 'evaluation_metrics.json'}")
-    print("[EVAL 4/7] 베스트 모델 후보 비교 준비")
-    print("[EVAL 5/7] 베스트 모델 비교/선정")
+    print("[정보][평가 4/7] 베스트 모델 후보 비교 준비")
+    print("[정보][평가 5/7] 베스트 모델 비교/선정")
     _update_best_hard1_model(
         models_base=run_dir_base,
         best_alias_dir=Path(current_dir) / "best_hard_model_1st",
-        target_mean_iou=float(args.target_mean_best_iou),
-        target_iou05=float(args.target_ratio_iou_0_5),
-        target_iou07=float(args.target_ratio_iou_0_7),
+        target_mean_iou=TARGET_MEAN_IOU,
+        target_iou05=TARGET_IOU_05,
+        target_iou07=TARGET_IOU_07,
     )
-    print("[EVAL 6/7] 히스토리 기록 완료")
-    print("[EVAL 7/7] 상세 평가 완료")
+    print("[정보][평가 6/7] 히스토리 기록 완료")
+    print("[정보][평가 7/7] 상세 평가 완료")
     print(f"상세 평가 결과: {local_eval_dir}")
 
 
 if __name__ == "__main__":
     main()
-
-

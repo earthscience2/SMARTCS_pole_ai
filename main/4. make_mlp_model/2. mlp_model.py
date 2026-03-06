@@ -29,8 +29,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-
-# [정리] 인코딩 손상 주석
 _run_local = "--local" in sys.argv or sys.platform != "win32"
 if _run_local:
     if "--local" in sys.argv:
@@ -45,41 +43,31 @@ else:
         _wsl_path = (
             "/mnt/" + _drive[0].lower() + str(_abs)[len(_drive):].replace("\\", "/")
         ) if _drive else str(_abs).replace("\\", "/")
-        print("WSL2에서 GPU 학습 스크립트를 실행합니다:", _wsl_path)
+        print("[정보] WSL2 GPU 학습 스크립트를 실행합니다:", _wsl_path)
         arg_str = " ".join(shlex.quote(a) for a in sys.argv[1:])
         cmd = f"bash {shlex.quote(_wsl_path)} {arg_str}".strip()
         ret = subprocess.run(["wsl", "bash", "-lc", cmd], cwd=str(_project_root))
         sys.exit(ret.returncode)
 
 # ============================================================================
-# [정리] 인코딩 손상 주석
 # ============================================================================
 USER_OPTIONS = {
-    # [정리] 인코딩 손상 주석
     "hidden_layers": [64, 32, 16],  # MLP 은닉층 구조
     "alpha": 1e-4,                  # L2 정규화 계수
     "max_iter": 1200,               # 최대 반복 횟수
     "early_stopping": True,         # 조기 종료 사용
     "validation_fraction": 0.2,     # 조기종료용 내부 검증 비율
     "n_iter_no_change": 25,         # 조기 종료 patience
-    
-    # [정리] 인코딩 손상 주석
     "val_size": 0.3,                # 홀드아웃 검증 비율
     "seed": 42,                     # 랜덤 시드
-    
-    # [정리] 인코딩 손상 주석
     "weight_light": 0.4,            # Light 가중치
     "weight_hard1": 0.3,            # Hard1 가중치
     "weight_hard2": 0.3,            # Hard2 가중치
     "weight_x": 0.34,               # X축 가중치
     "weight_y": 0.33,               # Y축 가중치
     "weight_z": 0.33,               # Z축 가중치
-    
-    # [정리] 인코딩 손상 주석
     "target_suspect_recall": 0.90,  # suspect 임계값 목표 Recall
     "target_break_precision": 0.90, # break 임계값 목표 Precision
-    
-    # [정리] 인코딩 손상 주석
     "target_binary_alert_f1": 0.75,     # Alert 이진 분류 F1 목표
     "target_binary_break_f1": 0.70,     # Break 이진 분류 F1 목표
     "target_binary_break_auc": 0.80,    # Break 이진 분류 AUC 목표
@@ -91,19 +79,16 @@ RUN_BASE_DIR = CURRENT_DIR / "2. mlp_models"
 BEST_ALIAS_DIR = CURRENT_DIR / "best_model"
 TRAIN_DATA_BASE = CURRENT_DIR / "1. mlp_train_data"
 FINAL_BEST_MODEL_DIR = CURRENT_DIR.parent / "best_model"  # 최종 베스트 모델 디렉터리
-
-
-# [정리] 인코딩 손상 주석
 _gpus = tf.config.list_physical_devices("GPU")
 if _gpus:
     try:
         for _g in _gpus:
             tf.config.experimental.set_memory_growth(_g, True)
-        print("GPU 사용:", [g.name for g in _gpus])
+        print("[정보] GPU 사용:", [g.name for g in _gpus])
     except RuntimeError as e:
-        print("GPU 설정 실패:", e)
+        print("[오류] GPU 설정 실패:", e)
 else:
-    print("GPU 없음, CPU 사용")
+    print("[정보] GPU 없음, CPU 사용")
 
 
 def get_latest_train_data_run(base: Path) -> Path:
@@ -115,7 +100,6 @@ def get_latest_train_data_run(base: Path) -> Path:
     for d in base.iterdir():
         if not d.is_dir():
             continue
-        # [정리] 인코딩 손상 주석
         required_files = ["features.npy", "labels.npy", "X_train.npy", "X_val.npy", "y_train.npy", "y_val.npy"]
         if all((d / f).exists() for f in required_files):
             candidates.append(d)
@@ -128,24 +112,18 @@ def get_latest_train_data_run(base: Path) -> Path:
 
 def load_train_data(train_data_dir: Path) -> Dict:
     """MLP 학습 데이터를 로드한다."""
-    print(f"Loading train data from: {train_data_dir}")
-    
-    # [정리] 인코딩 손상 주석
+    print(f"[정보] 학습 데이터 로드: {train_data_dir}")
     X_train = np.load(train_data_dir / "X_train.npy")
     X_val = np.load(train_data_dir / "X_val.npy")
     y_train = np.load(train_data_dir / "y_train.npy")
     y_val = np.load(train_data_dir / "y_val.npy")
-    
-    # [정리] 인코딩 손상 주석
     with open(train_data_dir / "metadata.json", 'r', encoding='utf-8') as f:
         metadata = json.load(f)
-    
-    # [정리] 인코딩 손상 주석
     with open(train_data_dir / "feature_names.json", 'r', encoding='utf-8') as f:
         feature_names = json.load(f)
     
-    print(f"Train data loaded: X_train={X_train.shape}, X_val={X_val.shape}")
-    print(f"Feature names: {feature_names}")
+    print(f"[정보] 데이터 로드 완료: X_train={X_train.shape}, X_val={X_val.shape}")
+    print(f"[정보] 피처 목록: {feature_names}")
     
     return {
         "X_train": X_train,
@@ -181,10 +159,7 @@ def create_mlp_model(hidden_layers: List[int], alpha: float, max_iter: int,
 def evaluate_mlp_model(mlp: Pipeline, X_val: np.ndarray, y_val: np.ndarray,
                        target_suspect_recall: float, target_break_precision: float) -> Dict:
     """MLP 모델을 평가한다."""
-    # [정리] 인코딩 손상 주석
     val_prob = mlp.predict_proba(X_val)[:, 1]
-    
-    # [정리] 인코딩 손상 주석
     suspect_rule = find_threshold_for_recall(y_val, val_prob, target_suspect_recall)
     break_rule = find_threshold_for_precision(y_val, val_prob, target_break_precision)
     
@@ -193,12 +168,8 @@ def evaluate_mlp_model(mlp: Pipeline, X_val: np.ndarray, y_val: np.ndarray,
     
     if break_th < suspect_th:
         break_th = min(1.0, suspect_th + 1e-6)
-    
-    # [정리] 인코딩 손상 주석
     pred_alert = (val_prob >= suspect_th).astype(np.int32)
     pred_break = (val_prob >= break_th).astype(np.int32)
-    
-    # [정리] 인코딩 손상 주석
     metrics = {
         "binary_alert": {
             "precision": float(precision_score(y_val, pred_alert, zero_division=0)),
@@ -260,8 +231,6 @@ def check_model_pass_criteria(metrics: Dict, options: Dict) -> Tuple[bool, str]:
 def copy_dependent_models_to_final(train_data_metadata: Dict, mlp_run_name: str):
     """의존 모델을 최종 베스트 모델 디렉터리로 복사한다."""
     print("\n[COPY] 의존 모델을 최종 베스트 디렉터리로 복사합니다.")
-    
-    # [정리] 인코딩 손상 주석
     FINAL_BEST_MODEL_DIR.mkdir(parents=True, exist_ok=True)
     
     try:
@@ -269,11 +238,7 @@ def copy_dependent_models_to_final(train_data_metadata: Dict, mlp_run_name: str)
         light_info = train_data_metadata.get("light_model_info", {})
         if light_info and "selected" in light_info:
             light_run = light_info["selected"]["model_run"]
-            
-            # [정리] 인코딩 손상 주석
             light_base_dir = CURRENT_DIR.parent / "2. make_light_model" / "best_light_model"
-            
-            # [정리] 인코딩 손상 주석
             actual_light_dir = None
             for d in light_base_dir.iterdir():
                 if d.is_dir() and light_run.startswith(d.name):
@@ -302,8 +267,6 @@ def copy_dependent_models_to_final(train_data_metadata: Dict, mlp_run_name: str)
             if hard1_checkpoints_dir.exists():
                 hard1_dest_dir = FINAL_BEST_MODEL_DIR / "hard1_model"
                 hard1_dest_dir.mkdir(parents=True, exist_ok=True)
-                
-                # [정리] 인코딩 손상 주석
                 for axis in ['x', 'y', 'z']:
                     model_file = hard1_checkpoints_dir / f"conf_{axis}.keras"
                     if model_file.exists():
@@ -317,10 +280,7 @@ def copy_dependent_models_to_final(train_data_metadata: Dict, mlp_run_name: str)
         hard2_info = train_data_metadata.get("hard2_model_info", {})
         if hard2_info and "selected" in hard2_info:
             hard2_run = hard2_info["selected"]["model_run"]
-            # [정리] 인코딩 손상 주석
             hard2_base_dir = CURRENT_DIR.parent / "3. make_hard_model" / "best_hard_model_2nd"
-            
-            # [정리] 인코딩 손상 주석
             actual_hard2_dir = None
             for d in hard2_base_dir.iterdir():
                 if d.is_dir() and hard2_run.startswith(d.name):
@@ -332,8 +292,6 @@ def copy_dependent_models_to_final(train_data_metadata: Dict, mlp_run_name: str)
                 if hard2_checkpoints_dir.exists():
                     hard2_dest_dir = FINAL_BEST_MODEL_DIR / "hard2_model"
                     hard2_dest_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    # [정리] 인코딩 손상 주석
                     for axis in ['x', 'y', 'z']:
                         model_file = hard2_checkpoints_dir / f"conf_{axis}.keras"
                         if model_file.exists():
@@ -416,8 +374,6 @@ def update_best_model(run_dir: Path, metrics: Dict, train_data_metadata: Dict,
     current_f1 = metrics["binary_break"]["f1"]
     current_auc = metrics["binary_break"]["roc_auc"]
     current_alert_f1 = metrics["binary_alert"]["f1"]
-    
-    # [정리] 인코딩 손상 주석
     if best_selection_file.exists():
         with open(best_selection_file, 'r', encoding='utf-8') as f:
             current_best = json.load(f)
@@ -440,11 +396,7 @@ def update_best_model(run_dir: Path, metrics: Dict, train_data_metadata: Dict,
         print(f"         Break F1: {current_f1:.4f}")
         print(f"         Break AUC: {current_auc:.4f}")
         print(f"         Alert F1: {current_alert_f1:.4f}")
-    
-    # [정리] 인코딩 손상 주석
     BEST_ALIAS_DIR.mkdir(parents=True, exist_ok=True)
-    
-    # [정리] 인코딩 손상 주석
     if (run_dir / "mlp_pipeline.joblib").exists():
         shutil.copy2(run_dir / "mlp_pipeline.joblib", BEST_ALIAS_DIR / "mlp_pipeline.joblib")
         print(f"[SAVED] 베스트 모델 파일 저장: {BEST_ALIAS_DIR / 'mlp_pipeline.joblib'}")
@@ -457,8 +409,6 @@ def update_best_model(run_dir: Path, metrics: Dict, train_data_metadata: Dict,
         passed,
         feedback,
     )
-    
-    # [정리] 인코딩 손상 주석
     copy_dependent_models_to_final(train_data_metadata, run_dir.name)
     
     model_update_log = {
@@ -474,8 +424,6 @@ def update_best_model(run_dir: Path, metrics: Dict, train_data_metadata: Dict,
             "hard2": train_data_metadata.get("hard2_model_info", {}).get("selected", {}).get("model_run", ""),
         }
     }
-    
-    # [정리] 인코딩 손상 주석
     log_file = FINAL_BEST_MODEL_DIR / "model_update_history.jsonl"
     with open(log_file, 'a', encoding='utf-8') as f:
         f.write(json.dumps(model_update_log, ensure_ascii=False) + '\n')
@@ -684,60 +632,35 @@ def _make_eval_plots(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train MLP final decision model with best model management.")
+    parser = argparse.ArgumentParser(description="MLP 최종 의사결정 모델 학습")
     parser.add_argument("--train-data-run", default=None, help="MLP train data run name (default: latest)")
     parser.add_argument("--run-name", default=None, help="output run name")
-    parser.add_argument("--force-retrain", action="store_true", help="force retrain even if model exists")
-    
-    # [정리] 인코딩 손상 주석
-    parser.add_argument("--hidden-layers", default=None, help="MLP hidden layers (e.g., '64,32,16')")
-    parser.add_argument("--alpha", type=float, default=None, help="L2 regularization")
-    parser.add_argument("--max-iter", type=int, default=None, help="max iterations")
-    parser.add_argument("--seed", type=int, default=None, help="random seed")
     
     args = parser.parse_args()
-    
-    # [정리] 인코딩 손상 주석
     options = USER_OPTIONS.copy()
-    if args.hidden_layers:
-        options["hidden_layers"] = [int(x.strip()) for x in args.hidden_layers.split(",")]
-    if args.alpha is not None:
-        options["alpha"] = args.alpha
-    if args.max_iter is not None:
-        options["max_iter"] = args.max_iter
-    if args.seed is not None:
-        options["seed"] = args.seed
     
-    print("=== MLP Model Training Configuration ===")
+    print("=== MLP 학습 설정 ===")
     print(f"Hidden layers: {options['hidden_layers']}")
     print(f"Alpha (L2): {options['alpha']}")
     print(f"Max iterations: {options['max_iter']}")
     print(f"Target Alert F1: {options['target_binary_alert_f1']}")
     print(f"Target Break F1: {options['target_binary_break_f1']}")
     print(f"Target Break AUC: {options['target_binary_break_auc']}")
-    print("========================================\n")
-    
-    # [정리] 인코딩 손상 주석
+    print("=====================\n")
     np.random.seed(options["seed"])
     tf.random.set_seed(options["seed"])
-    
-    # [정리] 인코딩 손상 주석
     if args.train_data_run:
         train_data_dir = TRAIN_DATA_BASE / args.train_data_run
     else:
         train_data_dir = get_latest_train_data_run(TRAIN_DATA_BASE)
     
     train_data = load_train_data(train_data_dir)
-    
-    # [정리] 인코딩 손상 주석
     run_name = args.run_name or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = RUN_BASE_DIR / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     
-    print(f"Training run directory: {run_dir}")
-    
-    # [정리] 인코딩 손상 주석
-    print("Creating and training MLP model...")
+    print(f"[정보] 학습 run 디렉터리: {run_dir}")
+    print("[정보] MLP 모델 학습을 시작합니다...")
     mlp = create_mlp_model(
         hidden_layers=options["hidden_layers"],
         alpha=options["alpha"],
@@ -747,30 +670,24 @@ def main() -> None:
         n_iter_no_change=options["n_iter_no_change"],
         seed=options["seed"]
     )
-    
-    # [정리] 인코딩 손상 주석
     mlp.fit(train_data["X_train"], train_data["y_train"])
-    print("Training completed!")
-    
-    # [정리] 인코딩 손상 주석
-    print("Evaluating model...")
+    print("[정보] 학습 완료")
+    print("[정보] 모델 평가를 수행합니다...")
     metrics = evaluate_mlp_model(
         mlp, train_data["X_val"], train_data["y_val"],
         options["target_suspect_recall"], options["target_break_precision"]
     )
-    
-    # [정리] 인코딩 손상 주석
     passed, feedback = check_model_pass_criteria(metrics, options)
     
-    print("\n=== Model Evaluation Results ===")
+    print("\n=== 모델 평가 결과 ===")
     print(f"Binary Alert F1: {metrics['binary_alert']['f1']:.4f}")
     print(f"Binary Break F1: {metrics['binary_break']['f1']:.4f}")
     print(f"Binary Break AUC: {metrics['binary_break']['roc_auc']:.4f}")
     print(f"Suspect Threshold: {metrics['thresholds']['suspect_threshold']:.4f}")
     print(f"Break Threshold: {metrics['thresholds']['break_threshold']:.4f}")
-    print(f"\nPass Status: {'PASS' if passed else 'FAIL'}")
-    print(f"Feedback:\n{feedback}")
-    print("================================\n")
+    print(f"\n통과 여부: {'PASS' if passed else 'FAIL'}")
+    print(f"피드백:\n{feedback}")
+    print("====================\n")
     
     results = {
         "run_name": run_name,
@@ -790,29 +707,25 @@ def main() -> None:
     
     with open(run_dir / "training_results.json", 'w', encoding='utf-8') as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
-    
-    # [정리] 인코딩 손상 주석
     print("\n" + "="*60)
-    print("[CHECK] 베스트 모델 업데이트 확인 중...")
+    print("[정보] 베스트 모델 업데이트 여부를 확인합니다.")
     print("="*60)
     
     updated = update_best_model(run_dir, metrics, train_data["metadata"], passed, feedback)
     
     print("="*60)
     if updated:
-        print("[COMPLETE] 베스트 모델 업데이트 완료!")
-        print("[FINAL] 최종 베스트 모델 세트가 main/best_model에 저장되었습니다.")
+        print("[정보] 베스트 모델 업데이트 완료")
+        print("[정보] 최종 베스트 모델 세트를 main/best_model에 저장했습니다.")
     else:
-        print("[MAINTAIN] 기존 베스트 모델 유지")
+        print("[정보] 기존 베스트 모델을 유지합니다.")
     print("="*60)
     
-    print(f"\n[FINISHED] 학습 완료: {run_dir}")
-    print(f"[LOCAL_BEST] 로컬 베스트: {BEST_ALIAS_DIR}")
-    print(f"[FINAL_BEST] 최종 베스트: {FINAL_BEST_MODEL_DIR}")
-    
-    # [정리] 인코딩 손상 주석
+    print(f"\n[정보] 학습 완료: {run_dir}")
+    print(f"[정보] 로컬 베스트: {BEST_ALIAS_DIR}")
+    print(f"[정보] 최종 베스트: {FINAL_BEST_MODEL_DIR}")
     if updated and FINAL_BEST_MODEL_DIR.exists():
-        print(f"\n[STRUCTURE] 최종 베스트 모델 구조:")
+        print(f"\n[정보] 최종 베스트 모델 구조:")
         print(f"  {FINAL_BEST_MODEL_DIR}/")
         for model_dir in ["light_model", "hard1_model", "hard2_model", "mlp_model"]:
             model_path = FINAL_BEST_MODEL_DIR / model_dir

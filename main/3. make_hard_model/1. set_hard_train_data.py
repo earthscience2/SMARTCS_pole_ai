@@ -1,4 +1,4 @@
-﻿"""?쒗???숈뒿 ?곗씠??以鍮?(CSV ??NPY) - Hard 紐⑤뜽??bbox ?ы븿 ?숈뒿 ?곗씠???앹꽦"""
+"""파단/정상 균형 데이터셋 생성(CSV -> NPY) - Hard 1차 bbox 학습 데이터 준비"""
 
 import os
 import re
@@ -15,7 +15,7 @@ from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from scipy.ndimage import zoom
 
-# ?ㅽ겕由쏀듃 ?붾젆?좊━ 湲곗? 寃쎈줈 (?ㅽ뻾 ?꾩튂? 臾닿?)
+# 경로/기본 설정 (상대 경로 기준 탐색)
 current_dir = os.path.dirname(os.path.abspath(__file__))
 img_height = 304
 
@@ -66,20 +66,20 @@ def _resolve_edit_data_dir(edit_data_dir: str) -> Path:
     return resolved
 
 # ============================================================================
-# 1) CSV 濡쒕뱶 / ?쒗???대?吏) ?앹꽦 ?좏떥
+# 1) CSV 로드 / 시퀀스 이미지 생성
 # ============================================================================
 
 
 def load_crop_csv(csv_path: str) -> Optional[pd.DataFrame]:
-    """?щ∼??CSV ?뚯씪 濡쒕뱶."""
+    """단일 CSV를 로드합니다."""
     try:
         df = pd.read_csv(csv_path)
         if df.empty:
             return None
         return df
     except Exception as e:
-        print("[ERR] read_csv failed:", csv_path)
-        print("   err =", repr(e))
+        print("[오류] CSV 읽기 실패:", csv_path)
+        print("       상세:", repr(e))
         return None
 
 
@@ -87,9 +87,8 @@ def prepare_sequence_from_csv(
     csv_path: str,
     sort_by: str = "height",
     feature_min_max: Optional[Dict[str, Tuple[float, float]]] = None,
-    max_height: Optional[int] = None,
 ) -> Optional[Tuple[np.ndarray, Dict]]:
-    """CSV ?뚯씪?먯꽌 ?쒗???대?吏) ?곗씠???앹꽦 (height, degree, x, y, z ?ы븿, 媛곴컖 0~1 ?뺢퇋??."""
+    """CSV에서 시퀀스 이미지 생성 (height, degree, x, y, z 값을 0~1로 정규화)."""
     df = load_crop_csv(csv_path)
     if df is None:
         return None
@@ -164,14 +163,14 @@ def prepare_sequence_from_csv(
 
 
 # ============================================================================
-# 2) ?뚯씪 ?섏쭛 / ROI bbox ?좏떥
+# 2) 파일 수집 / ROI bbox 생성
 # ============================================================================
 
 
 def collect_all_crop_files(data_dir: str, is_break: bool) -> List[Tuple[str, str, str, int]]:
     """
-    data_dir/{break|normal} ?꾨옒?먯꽌 *_OUT_processed.csv ?뚯씪 ?섏쭛.
-    諛섑솚: (csv_path, project_name, poleid, label)
+    data_dir/{break|normal} 아래 *_OUT_processed.csv 수집.
+    반환: (csv_path, project_name, poleid, label)
     """
     base_dir = _resolve_data_root_dir(data_dir)
     base_dir = base_dir / ("break" if is_break else "normal")
@@ -179,9 +178,9 @@ def collect_all_crop_files(data_dir: str, is_break: bool) -> List[Tuple[str, str
 
     if not base_dir.exists():
         raise FileNotFoundError(
-            f"CSV ?섏쭛 寃쎈줈瑜?李얠? 紐삵뻽?듬땲?? {base_dir}\n"
-            f"?낅젰 data_dir='{data_dir}'\n"
-            f"沅뚯옣: --data-dir \"4. merge_data\" (main/1. make_data set ?섏쐞 ?먮룞 ?먯깋)"
+            f"CSV 수집 기본 경로가 없습니다: {base_dir}\n"
+            f"입력 data_dir='{data_dir}'\n"
+            f"예: --data-dir \"4. merge_data\" (main/1. make_data set 기준 상대 경로)"
         )
 
     for project_dir in base_dir.iterdir():
@@ -199,7 +198,7 @@ def collect_all_crop_files(data_dir: str, is_break: bool) -> List[Tuple[str, str
 
 
 def parse_roi_bbox(roi_info: dict, k: int) -> List[List[float]]:
-    """roi_{k}_regions?먯꽌 [hc, hw, dc, dw] 由ъ뒪??諛섑솚."""
+    """roi_{k}_regions에서 [hc, hw, dc, dw] 목록 추출."""
     out = []
     regions = roi_info.get(f"roi_{k}_regions")
     if not isinstance(regions, list):
@@ -232,7 +231,7 @@ def get_sample_id_from_csv(csv_path: str) -> Optional[str]:
 
 
 def match_roi_json_from_csv(csv_path: str, edit_data_dir: str = "5. edit_data") -> Optional[str]:
-    """CSV 寃쎈줈????묓븯??edit_data_dir/break ??roi_info.json 寃쎈줈 諛섑솚."""
+    """CSV 경로에 대응하는 edit_data_dir/break/... roi_info.json 경로 찾기."""
     p = Path(csv_path)
     sample_id = get_sample_id_from_csv(csv_path)
     if sample_id is None:
@@ -258,7 +257,7 @@ def load_roi_info_json(json_path: str) -> Optional[Dict]:
 
 
 def expand_rois_from_roi_info(roi_info: Optional[dict]) -> List[Tuple[int, List[float]]]:
-    """(roi_idx, [hc, hw, dc, dw]) 由ъ뒪??諛섑솚."""
+    """roi_info에서 (roi_idx, [hc, hw, dc, dw]) 리스트 생성."""
     if roi_info is None:
         return []
     out = []
@@ -270,7 +269,7 @@ def expand_rois_from_roi_info(roi_info: Optional[dict]) -> List[Tuple[int, List[
 
 def normalize_bbox_center_width(bbox: List[float], feature_min_max: dict) -> Optional[List[float]]:
     """
-    bbox: [hc, hw, dc, dw] (?먮낯 ?ㅼ???
+    bbox: [hc, hw, dc, dw] (center/width 기준)
     feature_min_max: metadata['feature_min_max'] with keys 'height','degree'
     return: [hc_n, hw_n, dc_n, dw_n] in [0,1]
     """
@@ -294,15 +293,15 @@ def normalize_bbox_center_width(bbox: List[float], feature_min_max: dict) -> Opt
 
 def _check_sync(stage: str, csv_path: str, imgs: list, labels: list, metadata_list: list) -> None:
     if not (len(imgs) == len(labels) == len(metadata_list)):
-        print("\n[SYNC ERROR]", stage)
-        print(" csv_path:", csv_path)
-        print(" lens:", len(imgs), len(labels), len(metadata_list))
+        print("\n[오류][동기화]", stage)
+        print("  csv_path:", csv_path)
+        print("  길이:", len(imgs), len(labels), len(metadata_list))
         raise AssertionError("len(imgs)!=len(labels)!=len(metadata_list)")
 
 
 # ============================================================================
-# 3) ?대?吏 由ъ궗?댁쫰 / ?꾩껜 ?뚯씠?꾨씪??# ============================================================================
-
+# 3) 데이터셋 생성 / NPY 저장
+# ============================================================================
 
 def resize_img_height(img: np.ndarray, target_h: int = 304) -> np.ndarray:
     h, w, c = img.shape
@@ -321,7 +320,7 @@ def process_cropped_data(
     run_subdir: Optional[str] = None,
     roi_edit_dir: str = "5. edit_data",
 ) -> Optional[Path]:
-    """edit_data/merge_data?먯꽌 CSV瑜??쎌뼱 bbox ?쇰꺼 ?ы븿 NPY ??? run_subdir=None?대㈃ YYYYMMDD_HHmm ?대뜑 ?앹꽦."""
+    """edit_data/merge_data CSV에서 bbox 라벨 포함 NPY 생성. run_subdir=None이면 YYYYMMDD_HHmm 자동 생성."""
     output_path = Path(output_dir)
     if output_path.is_absolute():
         base_output = output_path
@@ -364,7 +363,7 @@ def process_cropped_data(
     skip_no_roi = 0
     skip_no_bbox = 0
 
-    # ---- ?뚮떒 泥섎━ ----
+    # ---- 파단 데이터 처리 ----
     if crop_files:
         for csv_path, project_name, poleid, label in tqdm(crop_files, desc="파단 데이터 처리"):
             result = prepare_sequence_from_csv(
@@ -444,7 +443,7 @@ def process_cropped_data(
         print("  roi_info 기준 경로: {}. 해당 경로에 *_OUT_processed_roi_info.json이 있는지 확인하세요.".format(roi_edit_dir))
     print(f"정상 샘플 최대 수: {max_normal_samples}개 (파단 샘플의 10배)")
 
-    # ---- ?뺤긽 泥섎━ ----
+    # ---- 정상 데이터 처리 ----
     if normal_files:
         normal_kept = 0
         for csv_path, project_name, poleid, label in tqdm(normal_files, desc="정상 데이터 처리"):
@@ -510,7 +509,7 @@ def process_cropped_data(
     print(f"  총 샘플 수: {len(X)}")
     print(f"  시퀀스 형태: {X.shape}")
     print(f"  실패 파일 수: {len(failed_files)}개")
-    print("\n[DEBUG] Break ROI/BBox 통계:")
+    print("\n[정보] 파단 ROI/BBox 통계:")
 
     indices = np.arange(len(X))
     X_train, X_test, y_train, y_test, train_indices, test_indices = train_test_split(
@@ -567,7 +566,7 @@ def process_cropped_data(
     print(f"    - 파단 샘플: {len(break_samples)}개 (라벨 1)")
     print(f"    - 정상 샘플: {len(normal_samples)}개 (라벨 0)")
     print(f"  파단 샘플 비율: {len(break_samples)/len(imgs)*100:.2f}%")
-    # 2李?Hard 紐⑤뜽(13. evaluate_hard_model_2nd.py)???꾪븳 ?꾩쿂由?罹먯떆???④퍡 ?앹꽦
+    # 2차 Hard 평가(13. evaluate_hard_model_2nd.py)용 전처리 캐시 생성
     try:
         _generate_eval_cache_for_hard_model_2nd(
             output_path=output_path,
@@ -582,9 +581,9 @@ def process_cropped_data(
 
 
 # ============================================================================
-# 3-bis) 2李?Hard 紐⑤뜽 ?됯????꾩쿂由?罹먯떆 ?앹꽦
-#   - 13. evaluate_hard_model_2nd.py?먯꽌 ?ъ슜?섎뒗 build_dataset? ?숈씪???뺥깭濡?#     11. evaluate_resnet_model/preprocessed_cache/ ?꾨옒??NPZ/PKL ???#   - ?대젃寃??대몢硫?13踰??ㅽ겕由쏀듃 ?ㅽ뻾 ??CSV ?ъ쟾泥섎━ ???罹먯떆瑜?諛붾줈 ?ъ슜 媛??#   - ?섏〈?깆쓣 以꾩씠湲??꾪빐, ?ш린?쒕뒗 ???뚯씪???뺤쓽???꾩쿂由??좏떥
-#     (load_crop_csv, prepare_sequence_from_csv, collect_all_crop_files, resize_img_height)瑜?吏곸젒 ?ъ슜?쒕떎.
+# 3-bis) 2차 Hard 평가용 전처리 캐시
+#   - evaluate_hard_model_2nd.py에서 사용하는 build_dataset 캐시 생성
+#   - 전처리 파이프라인(load_crop_csv, prepare_sequence_from_csv, collect_all_crop_files, resize_img_height) 기반
 # ============================================================================
 
 
@@ -594,19 +593,15 @@ def _generate_eval_cache_for_hard_model_2nd(
     min_points: int = 200,
     max_points: int = 400,
 ) -> None:
-    """
-    2李?Hard 紐⑤뜽 ?됯? ?ㅽ겕由쏀듃(13. evaluate_hard_model_2nd.py)瑜??꾪븳
-    ?꾩쿂由?罹먯떆(X, metas, csv_paths, labels)瑜?誘몃━ ?앹꽦.
-
-    - 罹먯떆 寃쎈줈/?ㅻ뒗 13踰??ㅽ겕由쏀듃??湲곕낯媛믨낵 ?숈씪?섍쾶 留욎땄:
-      11. evaluate_resnet_model/preprocessed_cache/<CACHE_KEY>.npz / .pkl
-    - 13踰덉쓣 湲곕낯 ?듭뀡?쇰줈 ?ㅽ뻾?섎㈃ ??罹먯떆瑜?諛붾줈 ?ъ슜?섍퀬, ?꾩쿂由щ? ?앸왂?섍쾶 ??
+    """2차 Hard 평가용 전처리 캐시를 생성합니다.
+    evaluate_hard_model_2nd.py의 build_dataset 캐시와 동일한 포맷입니다.
+    저장 위치: 1. hard_train_data/<run_subdir>/eval_cache
     """
     print("\n[2nd-stage eval] 전처리 캐시 생성 시작...")
     imgs, metas, csv_paths, labels = [], [], [], []
     files: List[Tuple[str, str, str, int]] = []
 
-    # break / normal 紐⑤몢 ?ы븿 (13踰덉쓽 湲곕낯 ?ㅼ젙怨??숈씪)
+    # break / normal 모두 사용 (2차 평가용 전처리)
     files += collect_all_crop_files(data_dir, True)
     files += collect_all_crop_files(data_dir, False)
 
@@ -641,7 +636,7 @@ def _generate_eval_cache_for_hard_model_2nd(
     cache_dir = output_path / "eval_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # 13. evaluate_hard_model_2nd.py ??cache_key ?앹꽦 諛⑹떇怨??숈씪
+    # evaluate_hard_model_2nd.py의 cache_key 규칙과 동일
     cache_key = f"{data_dir}_{min_points}_{max_points}_False_False_None".replace(" ", "_").replace(".", "_")
     cache_npz = cache_dir / f"{cache_key}.npz"
     cache_pkl = cache_dir / f"{cache_key}.pkl"
@@ -654,7 +649,7 @@ def _generate_eval_cache_for_hard_model_2nd(
 
 
 # ============================================================================
-# 4) ?ㅽ뻾
+# 4) main
 # ============================================================================
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Light/Hard 모델 출력을 결합해 MLP 학습 데이터셋을 생성한다."""
 
@@ -28,18 +28,18 @@ def configure_tf_runtime(device: str) -> None:
             tf.config.set_visible_devices([], "GPU")
         except Exception:
             pass
-        print("[TF] device=cpu (GPU disabled)")
+        print("[정보][TF] CPU 모드로 실행합니다. (GPU 비활성화)")
         return
 
     if req == "gpu":
         if not gpus:
-            raise RuntimeError("device=gpu requested, but no GPU is available.")
+            raise RuntimeError("device=gpu가 지정됐지만 사용 가능한 GPU가 없습니다.")
         for gpu in gpus:
             try:
                 tf.config.experimental.set_memory_growth(gpu, True)
             except Exception:
                 pass
-        print(f"[TF] device=gpu (GPU count={len(gpus)})")
+        print(f"[정보][TF] GPU 모드로 실행합니다. (GPU 수: {len(gpus)})")
         return
 
     if gpus:
@@ -48,9 +48,9 @@ def configure_tf_runtime(device: str) -> None:
                 tf.config.experimental.set_memory_growth(gpu, True)
             except Exception:
                 pass
-        print(f"[TF] device=auto -> GPU (count={len(gpus)})")
+        print(f"[정보][TF] auto 모드: GPU 사용 (GPU 수: {len(gpus)})")
     else:
-        print("[TF] device=auto -> CPU")
+        print("[정보][TF] auto 모드: CPU 사용")
 
 
 def get_latest_hard_data_run(base: Path) -> Path:
@@ -86,22 +86,19 @@ def get_best_hard_model_info(best_model_dir: Path) -> Dict:
     selected_run = selection_info["selected"]["model_run"]
     run_dir = best_model_dir / selected_run
     
-    # [정리] 인코딩 손상 주석
     if not run_dir.exists():
-        print(f"[WARNING] Exact run directory not found: {selected_run}")
-        print(f"[INFO] Searching for similar directories...")
+        print(f"[경고] 정확히 일치하는 run 디렉터리를 찾지 못했습니다: {selected_run}")
+        print("[정보] 유사한 디렉터리를 탐색합니다.")
         
-        # [정리] 인코딩 손상 주석
         candidates = []
         for d in best_model_dir.iterdir():
             if d.is_dir() and selected_run.startswith(d.name):
                 candidates.append(d)
         
         if candidates:
-            # [정리] 인코딩 손상 주석
             run_dir = max(candidates, key=lambda x: len(x.name))
             actual_run_name = run_dir.name
-            print(f"[SUCCESS] Found similar directory: {actual_run_name}")
+            print(f"[정보] 유사 디렉터리를 사용합니다: {actual_run_name}")
         else:
             raise FileNotFoundError(f"No similar model run directory found for: {selected_run}")
     else:
@@ -200,7 +197,6 @@ def create_mlp_dataset(
     Returns:
         Dict: 생성된 데이터셋과 메타데이터
     """
-    # [정리] 인코딩 손상 주석
     x_test_path = hard_data_run / "test" / "break_imgs_test.npy"
     y_test_path = hard_data_run / "test" / "break_labels_test.npy"
     
@@ -211,15 +207,14 @@ def create_mlp_dataset(
     y_test_raw = np.load(y_test_path)
     y_true = y_test_raw[:, 0].astype(np.int32) if y_test_raw.ndim == 2 else y_test_raw.astype(np.int32)
     
-    # [정리] 인코딩 손상 주석
     csv_paths = collect_test_csv_paths(hard_data_run, len(X_test))
     sample_ids = [Path(p).name.replace("_OUT_processed.csv", "") if p else f"idx_{i}" for i, p in enumerate(csv_paths)]
 
-    # [정리] 인코딩 손상 주석
+    hard1_conf_x_path = hard1_model_dir / "conf_x.keras"
     hard1_conf_y_path = hard1_model_dir / "conf_y.keras"
     hard1_conf_z_path = hard1_model_dir / "conf_z.keras"
     
-    # [정리] 인코딩 손상 주석
+    hard2_conf_x_path = hard2_model_dir / "conf_x.keras"
     hard2_conf_y_path = hard2_model_dir / "conf_y.keras"
     hard2_conf_z_path = hard2_model_dir / "conf_z.keras"
     
@@ -233,33 +228,31 @@ def create_mlp_dataset(
         if not p.exists():
             raise FileNotFoundError(f"Model file not found: {p}")
 
-    # 3) 모델 로드
-    print("Loading models...")
+    print("[정보] 모델을 로드합니다...")
     light_model = tf.keras.models.load_model(light_model_path, compile=False)
     
-    # [정리] 인코딩 손상 주석
+    hard1_conf_x_model = tf.keras.models.load_model(hard1_conf_x_path, compile=False)
     hard1_conf_y_model = tf.keras.models.load_model(hard1_conf_y_path, compile=False)
     hard1_conf_z_model = tf.keras.models.load_model(hard1_conf_z_path, compile=False)
     
-    # [정리] 인코딩 손상 주석
+    hard2_conf_x_model = tf.keras.models.load_model(hard2_conf_x_path, compile=False)
     hard2_conf_y_model = tf.keras.models.load_model(hard2_conf_y_path, compile=False)
     hard2_conf_z_model = tf.keras.models.load_model(hard2_conf_z_path, compile=False)
 
-    # [정리] 인코딩 손상 주석
-    print("Predicting on hard test set...")
+    print("[정보] hard test 데이터 예측을 수행합니다...")
     light_prob = flatten_binary_output(light_model.predict(X_test, verbose=0))
     
-    # [정리] 인코딩 손상 주석
     hard1_conf_x = flatten_axis_conf(hard1_conf_x_model.predict(X_test, verbose=0))
     hard1_conf_y = flatten_axis_conf(hard1_conf_y_model.predict(X_test, verbose=0))
     hard1_conf_z = flatten_axis_conf(hard1_conf_z_model.predict(X_test, verbose=0))
     
-    # [정리] 인코딩 손상 주석
     hard2_conf_x = flatten_axis_conf(hard2_conf_x_model.predict(X_test, verbose=0))
     hard2_conf_y = flatten_axis_conf(hard2_conf_y_model.predict(X_test, verbose=0))
     hard2_conf_z = flatten_axis_conf(hard2_conf_z_model.predict(X_test, verbose=0))
 
-    # [정리] 인코딩 손상 주석
+    axis_weight_sum = weight_x + weight_y + weight_z
+    total_weight = weight_light + weight_hard1 + weight_hard2
+    
     if axis_weight_sum <= 0:
         raise ValueError("Axis weights sum must be > 0")
     
@@ -267,19 +260,14 @@ def create_mlp_dataset(
     wy = weight_y / axis_weight_sum
     wz = weight_z / axis_weight_sum
 
-    # [정리] 인코딩 손상 주석
-    # [정리] 인코딩 손상 주석
     hard1_score = (wx * hard1_conf_x) + (wy * hard1_conf_y) + (wz * hard1_conf_z)
     
-    # [정리] 인코딩 손상 주석
     hard2_score = (wx * hard2_conf_x) + (wy * hard2_conf_y) + (wz * hard2_conf_z)
     
-    # [정리] 인코딩 손상 주석
     w_light = weight_light / total_weight
     w_hard1 = weight_hard1 / total_weight
     w_hard2 = weight_hard2 / total_weight
     
-    # [정리] 인코딩 손상 주석
     fused_score = (w_light * light_prob) + (w_hard1 * hard1_score) + (w_hard2 * hard2_score)
     
     light_hard1_gap = np.abs(light_prob - hard1_score)
@@ -294,7 +282,6 @@ def create_mlp_dataset(
         light_hard1_gap, light_hard2_gap, hard1_hard2_gap,
     ]).astype(np.float32)
 
-    # [정리] 인코딩 손상 주석
     X_train, X_val, y_train, y_val, idx_train, idx_val = train_test_split(
         features,
         y_true,
@@ -304,7 +291,6 @@ def create_mlp_dataset(
         stratify=y_true,
     )
 
-    # [정리] 인코딩 손상 주석
     feature_names = [
         'light_prob', 
         'hard1_conf_x', 'hard1_conf_y', 'hard1_conf_z',
@@ -318,13 +304,13 @@ def create_mlp_dataset(
     dataset_df['sample_id'] = sample_ids
     dataset_df['csv_path'] = csv_paths
 
-    print(f"Dataset created successfully!")
-    print(f"- Total samples: {len(features)}")
-    print(f"- Features: {features.shape[1]}")
-    print(f"- Train samples: {len(X_train)}")
-    print(f"- Validation samples: {len(X_val)}")
-    print(f"- Normal samples: {(y_true == 0).sum()}")
-    print(f"- Break samples: {(y_true == 1).sum()}")
+    print("[정보] 데이터셋 생성 완료")
+    print(f"  총 샘플 수: {len(features)}")
+    print(f"  피처 수: {features.shape[1]}")
+    print(f"  학습 샘플 수: {len(X_train)}")
+    print(f"  검증 샘플 수: {len(X_val)}")
+    print(f"  정상 샘플 수: {(y_true == 0).sum()}")
+    print(f"  파단 샘플 수: {(y_true == 1).sum()}")
 
     return {
         'features': features,
@@ -393,14 +379,14 @@ def save_dataset(dataset_dict: Dict, output_dir: Path, run_name: str = None) -> 
     with (save_dir / "feature_names.json").open("w", encoding="utf-8") as f:
         json.dump(dataset_dict['feature_names'], f, indent=2, ensure_ascii=False)
 
-    print(f"[SAVED] MLP Training Dataset saved to: {save_dir}")
-    print(f"[FILES] Dataset files:")
-    print(f"   - features.npy ({dataset_dict['features'].shape})")
-    print(f"   - X_train.npy ({dataset_dict['X_train'].shape})")
-    print(f"   - X_val.npy ({dataset_dict['X_val'].shape})")
-    print(f"   - mlp_dataset.csv")
-    print(f"   - metadata.json")
-    print(f"   - feature_names.json")
+    print(f"[정보] MLP 학습 데이터셋 저장 완료: {save_dir}")
+    print("[정보] 저장 파일:")
+    print(f"  - features.npy ({dataset_dict['features'].shape})")
+    print(f"  - X_train.npy ({dataset_dict['X_train'].shape})")
+    print(f"  - X_val.npy ({dataset_dict['X_val'].shape})")
+    print("  - mlp_dataset.csv")
+    print("  - metadata.json")
+    print("  - feature_names.json")
     
     return save_dir
 
@@ -415,48 +401,34 @@ def main():
     parser.add_argument("--output-dir", default="1. mlp_train_data", help="output directory")
     parser.add_argument("--run-name", default=None, help="run name for output")
     parser.add_argument("--seed", type=int, default=42, help="random seed")
-    parser.add_argument("--val-size", type=float, default=0.3, help="validation size ratio")
-    parser.add_argument("--weight-light", type=float, default=0.4, help="light score weight")
-    parser.add_argument("--weight-hard1", type=float, default=0.3, help="hard1 score weight")
-    parser.add_argument("--weight-hard2", type=float, default=0.3, help="hard2 score weight")
-    parser.add_argument("--weight-x", type=float, default=0.34, help="hard x axis weight")
-    parser.add_argument("--weight-y", type=float, default=0.33, help="hard y axis weight")
-    parser.add_argument("--weight-z", type=float, default=0.33, help="hard z axis weight")
     parser.add_argument("--device", choices=["auto", "cpu", "gpu"], default="auto", help="TF device")
-    parser.add_argument("--no-save", action="store_true", help="do not save dataset to files (default: save)")
     
     args = parser.parse_args()
     
-    # [정리] 인코딩 손상 주석
     configure_tf_runtime(args.device)
     np.random.seed(args.seed)
     tf.random.set_seed(args.seed)
     
-    # [정리] 인코딩 손상 주석
     hard_data_base = CURRENT_DIR.parent / "3. make_hard_model" / "1. hard_train_data"
     if args.hard_data_run:
         hard_data_run = hard_data_base / args.hard_data_run
     else:
         hard_data_run = get_latest_hard_data_run(hard_data_base)
     
-    # [정리] 인코딩 손상 주석
     light_base_dir = CURRENT_DIR.parent / "2. make_light_model" / args.light_model_dir
     light_info = get_best_hard_model_info(light_base_dir)
     light_model_path = light_info['checkpoints_dir'] / "best.keras"
     
-    # [정리] 인코딩 손상 주석
     hard1_base_dir = CURRENT_DIR.parent / "3. make_hard_model" / args.hard1_model_dir
     hard2_base_dir = CURRENT_DIR.parent / "3. make_hard_model" / args.hard2_model_dir
     
     print("=== Best Models Information ===")
     
-    # [정리] 인코딩 손상 주석
     print(f"Light Selected Run: {light_info['selected_run']}")
     if light_info['selected_run'] != light_info['actual_run_name']:
         print(f"Light Actual Directory: {light_info['actual_run_name']}")
     print(f"Light Metrics: {light_info['selection_info']['selected']['metrics']}")
     
-    # [정리] 인코딩 손상 주석
     hard1_info = get_best_hard_model_info(hard1_base_dir)
     print(f"Hard1 Selected Run: {hard1_info['selected_run']}")
     if hard1_info['selected_run'] != hard1_info['actual_run_name']:
@@ -464,7 +436,6 @@ def main():
     print(f"Hard1 Metrics: {hard1_info['selection_info']['selected']['metrics']}")
     hard1_model_dir = hard1_info['checkpoints_dir']
     
-    # [정리] 인코딩 손상 주석
     hard2_info = get_best_hard_model_info(hard2_base_dir)
     print(f"Hard2 Selected Run: {hard2_info['selected_run']}")
     if hard2_info['selected_run'] != hard2_info['actual_run_name']:
@@ -474,36 +445,30 @@ def main():
     
     print("===================================\n")
     
-    # [정리] 인코딩 손상 주석
     dataset_dict = create_mlp_dataset(
         hard_data_run=hard_data_run,
         light_model_path=light_model_path,
         hard1_model_dir=hard1_model_dir,
         hard2_model_dir=hard2_model_dir,
-        weight_light=args.weight_light,
-        weight_hard1=args.weight_hard1,
-        weight_hard2=args.weight_hard2,
-        weight_x=args.weight_x,
-        weight_y=args.weight_y,
-        weight_z=args.weight_z,
-        val_size=args.val_size,
+        weight_light=0.4,
+        weight_hard1=0.3,
+        weight_hard2=0.3,
+        weight_x=0.34,
+        weight_y=0.33,
+        weight_z=0.33,
+        val_size=0.3,
         seed=args.seed
     )
     
-    # [정리] 인코딩 손상 주석
     dataset_dict['metadata']['light_model_info'] = light_info['selection_info']
     dataset_dict['metadata']['hard1_model_info'] = hard1_info['selection_info']
     dataset_dict['metadata']['hard2_model_info'] = hard2_info['selection_info']
     
-    # [정리] 인코딩 손상 주석
-    if not args.no_save:
-        output_dir = CURRENT_DIR / args.output_dir
-        save_dataset(dataset_dict, output_dir, args.run_name)
-        print(f"\n[SUCCESS] Dataset saved to: {output_dir}")
-    else:
-        print("\n[WARNING] Dataset created in memory only (not saved to files)")
+    output_dir = CURRENT_DIR / args.output_dir
+    save_dataset(dataset_dict, output_dir, args.run_name)
+    print(f"\n[정보] 데이터셋 저장 경로: {output_dir}")
     
-    print("\n=== Dataset Summary ===")
+    print("\n=== 데이터셋 요약 ===")
     print(f"Feature names: {dataset_dict['feature_names']}")
     print(f"Dataset shape: {dataset_dict['features'].shape}")
     print(f"Train/Val split: {len(dataset_dict['X_train'])}/{len(dataset_dict['X_val'])}")
