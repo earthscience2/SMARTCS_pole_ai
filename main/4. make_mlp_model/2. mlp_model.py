@@ -91,6 +91,116 @@ else:
     print("[정보] GPU 없음, CPU 사용")
 
 
+def _resolve_hard2_source_dir_from_metadata(hard2_info: Dict) -> Optional[Path]:
+    """MLP 학습 메타데이터를 기반으로 Hard2 원본 run 디렉터리를 찾는다."""
+    if not hard2_info or "selected" not in hard2_info:
+        return None
+
+    selected = hard2_info.get("selected", {})
+    model_run = selected.get("model_run")
+    first_stage_run = selected.get("first_stage_run")
+    if not model_run:
+        return None
+
+    base_dir = CURRENT_DIR.parent / "3. make_hard_model" / "best_hard_model_2nd"
+    candidate_dirs = []
+    if first_stage_run:
+        candidate_dirs.append(base_dir / "by_first_stage" / str(first_stage_run))
+    candidate_dirs.append(base_dir / "overall_best")
+    candidate_dirs.append(base_dir)
+
+    for selection_base_dir in candidate_dirs:
+        run_dir = selection_base_dir / str(model_run)
+        if run_dir.exists():
+            return run_dir
+        if not selection_base_dir.exists():
+            continue
+        similar_dirs = [d for d in selection_base_dir.iterdir() if d.is_dir() and str(model_run).startswith(d.name)]
+        if similar_dirs:
+            return max(similar_dirs, key=lambda path: len(path.name))
+
+    return None
+
+
+def _resolve_axis_model_file(model_dir: Path, axis: str, candidates: List[str]) -> Optional[Path]:
+    for filename in candidates:
+        model_file = model_dir / filename.format(axis=axis)
+        if model_file.exists():
+            return model_file
+    return None
+
+
+def _sanitize_name(value: str) -> str:
+    safe = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in str(value))
+    return safe.strip("._") or "unknown"
+
+
+def _extract_dependency_runs(train_data_metadata: Dict) -> Dict[str, str]:
+    return {
+        "light": str(train_data_metadata.get("light_model_info", {}).get("selected", {}).get("model_run", "")),
+        "hard1": str(train_data_metadata.get("hard1_model_info", {}).get("selected", {}).get("model_run", "")),
+        "hard2": str(train_data_metadata.get("hard2_model_info", {}).get("selected", {}).get("model_run", "")),
+    }
+
+
+def _build_dependency_group_name(train_data_metadata: Dict) -> str:
+    runs = _extract_dependency_runs(train_data_metadata)
+    return "__".join([
+        f"light-{_sanitize_name(runs['light'])}",
+        f"hard1-{_sanitize_name(runs['hard1'])}",
+        f"hard2-{_sanitize_name(runs['hard2'])}",
+    ])
+
+
+def _best_metrics_payload(metrics: Dict) -> Dict:
+    return {
+        "binary_alert_f1": metrics["binary_alert"]["f1"],
+        "binary_break_f1": metrics["binary_break"]["f1"],
+        "binary_break_auc": metrics["binary_break"]["roc_auc"],
+        "suspect_threshold": metrics["thresholds"]["suspect_threshold"],
+        "break_threshold": metrics["thresholds"]["break_threshold"],
+    }
+
+
+def _load_best_selection(best_dir: Path) -> Optional[Dict]:
+    selection_file = best_dir / "best_model_selection.json"
+    if not selection_file.exists():
+        return None
+    with open(selection_file, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _compare_mlp_metrics(candidate: Dict, current: Dict) -> int:
+    candidate_tuple = (
+        float(candidate.get("binary_break_f1", 0.0)),
+        float(candidate.get("binary_break_auc", 0.0)),
+        float(candidate.get("binary_alert_f1", 0.0)),
+    )
+    current_tuple = (
+        float(current.get("binary_break_f1", 0.0)),
+        float(current.get("binary_break_auc", 0.0)),
+        float(current.get("binary_alert_f1", 0.0)),
+    )
+    if candidate_tuple > current_tuple:
+        return 1
+    if candidate_tuple < current_tuple:
+        return -1
+    return 0
+
+
+def _parse_hidden_layers(value: str) -> List[int]:
+    parts = [part.strip() for part in str(value).split(",") if part.strip()]
+    if not parts:
+        raise argparse.ArgumentTypeError("hidden layers must not be empty")
+    try:
+        layers = [int(part) for part in parts]
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("hidden layers must be comma-separated integers") from exc
+    if any(layer <= 0 for layer in layers):
+        raise argparse.ArgumentTypeError("hidden layers must be positive integers")
+    return layers
+
+
 def get_latest_train_data_run(base: Path) -> Path:
     """최신 MLP 학습 데이터 run 디렉터리를 찾는다."""
     if not base.exists():
@@ -228,7 +338,7 @@ def check_model_pass_criteria(metrics: Dict, options: Dict) -> Tuple[bool, str]:
     return False, "Unknown pass mode"
 
 
-def copy_dependent_models_to_final(train_data_metadata: Dict, mlp_run_name: str):
+def copy_dependent_models_to_final(train_data_metadata: Dict, mlp_run_name: str, mlp_best_dir: Path):
     """의존 모델을 최종 베스트 모델 디렉터리로 복사한다."""
     print("\n[COPY] 의존 모델을 최종 베스트 디렉터리로 복사합니다.")
     FINAL_BEST_MODEL_DIR.mkdir(parents=True, exist_ok=True)
@@ -268,8 +378,10 @@ def copy_dependent_models_to_final(train_data_metadata: Dict, mlp_run_name: str)
                 hard1_dest_dir = FINAL_BEST_MODEL_DIR / "hard1_model"
                 hard1_dest_dir.mkdir(parents=True, exist_ok=True)
                 for axis in ['x', 'y', 'z']:
-                    model_file = hard1_checkpoints_dir / f"conf_{axis}.keras"
-                    if model_file.exists():
+                    model_file = _resolve_axis_model_file(
+                        hard1_checkpoints_dir, axis, ["best_{axis}.keras", "conf_{axis}.keras"]
+                    )
+                    if model_file is not None:
                         shutil.copy2(model_file, hard1_dest_dir / f"conf_{axis}.keras")
                 
                 print(f"[COPIED] Hard1 모델: {hard1_run}")
@@ -279,13 +391,7 @@ def copy_dependent_models_to_final(train_data_metadata: Dict, mlp_run_name: str)
         # 3) Hard2 모델 복사
         hard2_info = train_data_metadata.get("hard2_model_info", {})
         if hard2_info and "selected" in hard2_info:
-            hard2_run = hard2_info["selected"]["model_run"]
-            hard2_base_dir = CURRENT_DIR.parent / "3. make_hard_model" / "best_hard_model_2nd"
-            actual_hard2_dir = None
-            for d in hard2_base_dir.iterdir():
-                if d.is_dir() and hard2_run.startswith(d.name):
-                    actual_hard2_dir = d
-                    break
+            actual_hard2_dir = _resolve_hard2_source_dir_from_metadata(hard2_info)
             
             if actual_hard2_dir:
                 hard2_checkpoints_dir = actual_hard2_dir / "checkpoints"
@@ -293,18 +399,21 @@ def copy_dependent_models_to_final(train_data_metadata: Dict, mlp_run_name: str)
                     hard2_dest_dir = FINAL_BEST_MODEL_DIR / "hard2_model"
                     hard2_dest_dir.mkdir(parents=True, exist_ok=True)
                     for axis in ['x', 'y', 'z']:
-                        model_file = hard2_checkpoints_dir / f"conf_{axis}.keras"
-                        if model_file.exists():
+                        model_file = _resolve_axis_model_file(
+                            hard2_checkpoints_dir, axis, ["conf_{axis}.keras", "best_{axis}.keras"]
+                        )
+                        if model_file is not None:
                             shutil.copy2(model_file, hard2_dest_dir / f"conf_{axis}.keras")
                     
                     print(f"[COPIED] Hard2 모델: {actual_hard2_dir.name}")
                 else:
                     print(f"[WARNING] Hard2 체크포인트를 찾을 수 없습니다: {hard2_checkpoints_dir}")
             else:
+                hard2_run = hard2_info["selected"].get("model_run", "")
                 print(f"[WARNING] Hard2 모델 디렉터리를 찾을 수 없습니다: {hard2_run}")
         
         # 4) MLP 모델 복사
-        mlp_source_file = BEST_ALIAS_DIR / "mlp_pipeline.joblib"
+        mlp_source_file = mlp_best_dir / "mlp_pipeline.joblib"
         if mlp_source_file.exists():
             mlp_dest_dir = FINAL_BEST_MODEL_DIR / "mlp_model"
             mlp_dest_dir.mkdir(parents=True, exist_ok=True)
@@ -338,18 +447,15 @@ def copy_dependent_models_to_final(train_data_metadata: Dict, mlp_run_name: str)
 def save_best_model_selection(best_dir: Path, run_name: str, metrics: Dict, 
                              train_data_metadata: Dict, passed: bool, feedback: str):
     """베스트 모델 선택 정보를 저장한다."""
+    dependency_runs = _extract_dependency_runs(train_data_metadata)
     selection_info = {
         "selected": {
             "model_run": run_name,
-            "metrics": {
-                "binary_alert_f1": metrics["binary_alert"]["f1"],
-                "binary_break_f1": metrics["binary_break"]["f1"],
-                "binary_break_auc": metrics["binary_break"]["roc_auc"],
-                "suspect_threshold": metrics["thresholds"]["suspect_threshold"],
-                "break_threshold": metrics["thresholds"]["break_threshold"],
-            },
+            "metrics": _best_metrics_payload(metrics),
             "pass": passed,
             "feedback": feedback,
+            "dependency_group": _build_dependency_group_name(train_data_metadata),
+            "dependency_runs": dependency_runs,
             "train_data_info": {
                 "light_model_info": train_data_metadata.get("light_model_info", {}),
                 "hard1_model_info": train_data_metadata.get("hard1_model_info", {}),
@@ -369,69 +475,92 @@ def save_best_model_selection(best_dir: Path, run_name: str, metrics: Dict,
 
 def update_best_model(run_dir: Path, metrics: Dict, train_data_metadata: Dict, 
                      passed: bool, feedback: str) -> bool:
-    """베스트 모델을 업데이트한다."""
-    best_selection_file = BEST_ALIAS_DIR / "best_model_selection.json"
-    current_f1 = metrics["binary_break"]["f1"]
-    current_auc = metrics["binary_break"]["roc_auc"]
-    current_alert_f1 = metrics["binary_alert"]["f1"]
-    if best_selection_file.exists():
-        with open(best_selection_file, 'r', encoding='utf-8') as f:
-            current_best = json.load(f)
-        
-        current_best_f1 = current_best["selected"]["metrics"]["binary_break_f1"]
-        current_best_auc = current_best["selected"]["metrics"]["binary_break_auc"]
-        current_best_alert_f1 = current_best["selected"]["metrics"]["binary_alert_f1"]
-        
-        if current_f1 <= current_best_f1:
-            print("[INFO] 현재 모델 성능이 기존 베스트보다 낮아 교체하지 않습니다.")
-            print(f"       현재 Break F1: {current_f1:.4f} <= 기존 Break F1: {current_best_f1:.4f}")
-            return False
-        else:
-            print("[SUCCESS] 성능 향상으로 베스트 모델을 교체합니다.")
-            print(f"         Break F1: {current_best_f1:.4f} -> {current_f1:.4f} (+{current_f1-current_best_f1:.4f})")
-            print(f"         Break AUC: {current_best_auc:.4f} -> {current_auc:.4f} (+{current_auc-current_best_auc:.4f})")
-            print(f"         Alert F1: {current_best_alert_f1:.4f} -> {current_alert_f1:.4f} (+{current_alert_f1-current_best_alert_f1:.4f})")
-    else:
-        print("[SUCCESS] 최초 베스트 모델을 생성합니다.")
-        print(f"         Break F1: {current_f1:.4f}")
-        print(f"         Break AUC: {current_auc:.4f}")
-        print(f"         Alert F1: {current_alert_f1:.4f}")
+    """사용한 의존 모델 조합별 베스트와 전체 베스트를 갱신한다."""
     BEST_ALIAS_DIR.mkdir(parents=True, exist_ok=True)
-    if (run_dir / "mlp_pipeline.joblib").exists():
-        shutil.copy2(run_dir / "mlp_pipeline.joblib", BEST_ALIAS_DIR / "mlp_pipeline.joblib")
-        print(f"[SAVED] 베스트 모델 파일 저장: {BEST_ALIAS_DIR / 'mlp_pipeline.joblib'}")
-    
-    save_best_model_selection(
-        BEST_ALIAS_DIR,
-        run_dir.name,
-        metrics,
-        train_data_metadata,
-        passed,
-        feedback,
-    )
-    copy_dependent_models_to_final(train_data_metadata, run_dir.name)
-    
+    by_dependency_dir = BEST_ALIAS_DIR / "by_dependency"
+    overall_best_dir = BEST_ALIAS_DIR / "overall_best"
+    by_dependency_dir.mkdir(parents=True, exist_ok=True)
+    overall_best_dir.mkdir(parents=True, exist_ok=True)
+
+    dependency_group = _build_dependency_group_name(train_data_metadata)
+    dependency_best_dir = by_dependency_dir / dependency_group
+    dependency_best_dir.mkdir(parents=True, exist_ok=True)
+
+    current_metrics = _best_metrics_payload(metrics)
+    current_f1 = current_metrics["binary_break_f1"]
+    current_auc = current_metrics["binary_break_auc"]
+    current_alert_f1 = current_metrics["binary_alert_f1"]
+
+    dependency_selection = _load_best_selection(dependency_best_dir)
+    previous_dependency_metrics = dependency_selection["selected"]["metrics"] if dependency_selection else None
+    dependency_updated = dependency_selection is None or _compare_mlp_metrics(current_metrics, previous_dependency_metrics) > 0
+
+    if dependency_updated:
+        if dependency_selection is None:
+            print("[SUCCESS] 의존 모델 조합별 첫 MLP 베스트를 생성합니다.")
+        else:
+            print("[SUCCESS] 같은 의존 모델 조합에서 더 좋은 MLP 베스트로 교체합니다.")
+            print(f"         Break F1: {previous_dependency_metrics['binary_break_f1']:.4f} -> {current_f1:.4f}")
+            print(f"         Break AUC: {previous_dependency_metrics['binary_break_auc']:.4f} -> {current_auc:.4f}")
+            print(f"         Alert F1: {previous_dependency_metrics['binary_alert_f1']:.4f} -> {current_alert_f1:.4f}")
+        if (run_dir / "mlp_pipeline.joblib").exists():
+            shutil.copy2(run_dir / "mlp_pipeline.joblib", dependency_best_dir / "mlp_pipeline.joblib")
+            print(f"[SAVED] 조합별 베스트 모델 파일 저장: {dependency_best_dir / 'mlp_pipeline.joblib'}")
+        save_best_model_selection(
+            dependency_best_dir,
+            run_dir.name,
+            metrics,
+            train_data_metadata,
+            passed,
+            feedback,
+        )
+    else:
+        print("[INFO] 같은 의존 모델 조합의 기존 베스트가 더 좋거나 같습니다.")
+        print(f"       현재 Break F1: {current_f1:.4f} <= 기존 Break F1: {previous_dependency_metrics['binary_break_f1']:.4f}")
+
+    overall_selection = _load_best_selection(overall_best_dir)
+    previous_overall_metrics = overall_selection["selected"]["metrics"] if overall_selection else None
+    overall_updated = overall_selection is None or _compare_mlp_metrics(current_metrics, previous_overall_metrics) > 0
+
+    if overall_updated:
+        if (run_dir / "mlp_pipeline.joblib").exists():
+            shutil.copy2(run_dir / "mlp_pipeline.joblib", overall_best_dir / "mlp_pipeline.joblib")
+            print(f"[SAVED] 전체 베스트 모델 파일 저장: {overall_best_dir / 'mlp_pipeline.joblib'}")
+        save_best_model_selection(
+            overall_best_dir,
+            run_dir.name,
+            metrics,
+            train_data_metadata,
+            passed,
+            feedback,
+        )
+        copy_dependent_models_to_final(train_data_metadata, run_dir.name, overall_best_dir)
+        if overall_selection is None:
+            print("[SUCCESS] 전체 MLP 베스트를 처음 생성합니다.")
+        else:
+            print("[SUCCESS] 전체 MLP 베스트를 새 모델로 갱신합니다.")
+    else:
+        print("[INFO] 전체 MLP 베스트는 기존 모델을 유지합니다.")
+
     model_update_log = {
         "timestamp": datetime.datetime.now().isoformat(),
-        "action": "model_updated",
-        "previous_f1": current_best_f1 if best_selection_file.exists() else None,
-        "new_f1": current_f1,
-        "improvement": current_f1 - current_best_f1 if best_selection_file.exists() else current_f1,
+        "action": "model_updated" if (dependency_updated or overall_updated) else "keep_current_best",
+        "dependency_group": dependency_group,
+        "previous_dependency_metrics": previous_dependency_metrics,
+        "previous_overall_metrics": previous_overall_metrics,
+        "new_metrics": current_metrics,
         "new_model_run": run_dir.name,
-        "dependent_models": {
-            "light": train_data_metadata.get("light_model_info", {}).get("selected", {}).get("model_run", ""),
-            "hard1": train_data_metadata.get("hard1_model_info", {}).get("selected", {}).get("model_run", ""),
-            "hard2": train_data_metadata.get("hard2_model_info", {}).get("selected", {}).get("model_run", ""),
-        }
+        "dependency_best_updated": dependency_updated,
+        "overall_best_updated": overall_updated,
+        "dependent_models": _extract_dependency_runs(train_data_metadata),
     }
-    log_file = FINAL_BEST_MODEL_DIR / "model_update_history.jsonl"
+    log_file = BEST_ALIAS_DIR / "model_update_history.jsonl"
     with open(log_file, 'a', encoding='utf-8') as f:
         f.write(json.dumps(model_update_log, ensure_ascii=False) + '\n')
-    
-    print(f"[LOGGED] 모델 교체 이력 저장: {log_file}")
-    
-    return True
 
+    print(f"[LOGGED] 모델 베스트 갱신 이력 저장: {log_file}")
+
+    return dependency_updated or overall_updated
 
 def flatten_axis_conf(pred: np.ndarray) -> np.ndarray:
     pred = np.asarray(pred)
@@ -635,17 +764,65 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="MLP 최종 의사결정 모델 학습")
     parser.add_argument("--train-data-run", default=None, help="MLP train data run name (default: latest)")
     parser.add_argument("--run-name", default=None, help="output run name")
+    parser.add_argument("--hidden-layers", type=_parse_hidden_layers, default=None, help="comma-separated hidden layers, e.g. 64,32,16")
+    parser.add_argument("--alpha", type=float, default=None, help="L2 regularization alpha")
+    parser.add_argument("--max-iter", type=int, default=None, help="maximum MLP iterations")
+    parser.add_argument("--early-stopping", dest="early_stopping", action="store_true", help="enable early stopping")
+    parser.add_argument("--no-early-stopping", dest="early_stopping", action="store_false", help="disable early stopping")
+    parser.set_defaults(early_stopping=None)
+    parser.add_argument("--validation-fraction", type=float, default=None, help="validation fraction for early stopping")
+    parser.add_argument("--n-iter-no-change", type=int, default=None, help="early stopping patience")
+    parser.add_argument("--seed", type=int, default=None, help="random seed")
+    parser.add_argument("--target-suspect-recall", type=float, default=None, help="target suspect recall")
+    parser.add_argument("--target-break-precision", type=float, default=None, help="target break precision")
+    parser.add_argument("--target-binary-alert-f1", type=float, default=None, help="target alert F1")
+    parser.add_argument("--target-binary-break-f1", type=float, default=None, help="target break F1")
+    parser.add_argument("--target-binary-break-auc", type=float, default=None, help="target break AUC")
+    parser.add_argument("--target-pass-mode", choices=["all_metrics", "f1_only"], default=None, help="pass criteria mode")
     
     args = parser.parse_args()
     options = USER_OPTIONS.copy()
+    if args.hidden_layers is not None:
+        options["hidden_layers"] = args.hidden_layers
+    if args.alpha is not None:
+        options["alpha"] = float(args.alpha)
+    if args.max_iter is not None:
+        options["max_iter"] = int(args.max_iter)
+    if args.early_stopping is not None:
+        options["early_stopping"] = bool(args.early_stopping)
+    if args.validation_fraction is not None:
+        options["validation_fraction"] = float(args.validation_fraction)
+    if args.n_iter_no_change is not None:
+        options["n_iter_no_change"] = int(args.n_iter_no_change)
+    if args.seed is not None:
+        options["seed"] = int(args.seed)
+    if args.target_suspect_recall is not None:
+        options["target_suspect_recall"] = float(args.target_suspect_recall)
+    if args.target_break_precision is not None:
+        options["target_break_precision"] = float(args.target_break_precision)
+    if args.target_binary_alert_f1 is not None:
+        options["target_binary_alert_f1"] = float(args.target_binary_alert_f1)
+    if args.target_binary_break_f1 is not None:
+        options["target_binary_break_f1"] = float(args.target_binary_break_f1)
+    if args.target_binary_break_auc is not None:
+        options["target_binary_break_auc"] = float(args.target_binary_break_auc)
+    if args.target_pass_mode is not None:
+        options["target_pass_mode"] = str(args.target_pass_mode)
     
     print("=== MLP 학습 설정 ===")
     print(f"Hidden layers: {options['hidden_layers']}")
     print(f"Alpha (L2): {options['alpha']}")
     print(f"Max iterations: {options['max_iter']}")
+    print(f"Early stopping: {options['early_stopping']}")
+    print(f"Validation fraction: {options['validation_fraction']}")
+    print(f"N iter no change: {options['n_iter_no_change']}")
+    print(f"Seed: {options['seed']}")
+    print(f"Target suspect recall: {options['target_suspect_recall']}")
+    print(f"Target break precision: {options['target_break_precision']}")
     print(f"Target Alert F1: {options['target_binary_alert_f1']}")
     print(f"Target Break F1: {options['target_binary_break_f1']}")
     print(f"Target Break AUC: {options['target_binary_break_auc']}")
+    print(f"Target pass mode: {options['target_pass_mode']}")
     print("=====================\n")
     np.random.seed(options["seed"])
     tf.random.set_seed(options["seed"])

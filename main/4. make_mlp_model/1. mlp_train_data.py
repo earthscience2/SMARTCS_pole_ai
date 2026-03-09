@@ -73,25 +73,41 @@ def get_latest_hard_data_run(base: Path) -> Path:
     return sorted(candidates, key=lambda p: p.name)[-1]
 
 
-def get_best_hard_model_info(best_model_dir: Path) -> Dict:
+def _resolve_best_selection_dir(best_model_dir: Path, required_first_stage_run: str | None = None) -> Path:
+    """베스트 모델 별칭 디렉터리에서 실제 selection 파일 위치를 찾는다."""
+    if required_first_stage_run:
+        by_first_stage_dir = best_model_dir / "by_first_stage" / required_first_stage_run
+        if (by_first_stage_dir / "best_model_selection.json").exists():
+            return by_first_stage_dir
+
+    overall_best_dir = best_model_dir / "overall_best"
+    if (overall_best_dir / "best_model_selection.json").exists():
+        return overall_best_dir
+
+    direct_selection = best_model_dir / "best_model_selection.json"
+    if direct_selection.exists():
+        return best_model_dir
+
+    raise FileNotFoundError(f"Best model selection file not found under: {best_model_dir}")
+
+
+def get_best_hard_model_info(best_model_dir: Path, required_first_stage_run: str | None = None) -> Dict:
     """best_hard_model 디렉터리에서 선택된 모델 정보를 읽는다."""
-    selection_file = best_model_dir / "best_model_selection.json"
-    
-    if not selection_file.exists():
-        raise FileNotFoundError(f"Best model selection file not found: {selection_file}")
+    selection_base_dir = _resolve_best_selection_dir(best_model_dir, required_first_stage_run=required_first_stage_run)
+    selection_file = selection_base_dir / "best_model_selection.json"
     
     with open(selection_file, 'r', encoding='utf-8') as f:
         selection_info = json.load(f)
     
     selected_run = selection_info["selected"]["model_run"]
-    run_dir = best_model_dir / selected_run
+    run_dir = selection_base_dir / selected_run
     
     if not run_dir.exists():
         print(f"[경고] 정확히 일치하는 run 디렉터리를 찾지 못했습니다: {selected_run}")
         print("[정보] 유사한 디렉터리를 탐색합니다.")
         
         candidates = []
-        for d in best_model_dir.iterdir():
+        for d in selection_base_dir.iterdir():
             if d.is_dir() and selected_run.startswith(d.name):
                 candidates.append(d)
         
@@ -110,6 +126,8 @@ def get_best_hard_model_info(best_model_dir: Path) -> Dict:
     
     return {
         "selection_info": selection_info,
+        "selection_base_dir": selection_base_dir,
+        "selection_file": selection_file,
         "run_dir": run_dir,
         "checkpoints_dir": checkpoints_dir,
         "selected_run": selected_run,
@@ -135,6 +153,15 @@ def flatten_axis_conf(pred: np.ndarray) -> np.ndarray:
     if pred.ndim == 2:
         return np.max(pred, axis=1).astype(np.float32)
     return pred.reshape(pred.shape[0], -1).max(axis=1).astype(np.float32)
+
+
+def _resolve_axis_model_path(model_dir: Path, axis: str, candidates: List[str]) -> Path:
+    for filename in candidates:
+        model_path = model_dir / filename.format(axis=axis)
+        if model_path.exists():
+            return model_path
+    tried = ", ".join(filename.format(axis=axis) for filename in candidates)
+    raise FileNotFoundError(f"Axis model file not found in {model_dir}: {tried}")
 
 
 def collect_test_csv_paths(run_dir: Path, n_test: int) -> List[str]:
@@ -210,13 +237,13 @@ def create_mlp_dataset(
     csv_paths = collect_test_csv_paths(hard_data_run, len(X_test))
     sample_ids = [Path(p).name.replace("_OUT_processed.csv", "") if p else f"idx_{i}" for i, p in enumerate(csv_paths)]
 
-    hard1_conf_x_path = hard1_model_dir / "conf_x.keras"
-    hard1_conf_y_path = hard1_model_dir / "conf_y.keras"
-    hard1_conf_z_path = hard1_model_dir / "conf_z.keras"
-    
-    hard2_conf_x_path = hard2_model_dir / "conf_x.keras"
-    hard2_conf_y_path = hard2_model_dir / "conf_y.keras"
-    hard2_conf_z_path = hard2_model_dir / "conf_z.keras"
+    hard1_conf_x_path = _resolve_axis_model_path(hard1_model_dir, "x", ["best_{axis}.keras", "conf_{axis}.keras"])
+    hard1_conf_y_path = _resolve_axis_model_path(hard1_model_dir, "y", ["best_{axis}.keras", "conf_{axis}.keras"])
+    hard1_conf_z_path = _resolve_axis_model_path(hard1_model_dir, "z", ["best_{axis}.keras", "conf_{axis}.keras"])
+
+    hard2_conf_x_path = _resolve_axis_model_path(hard2_model_dir, "x", ["conf_{axis}.keras", "best_{axis}.keras"])
+    hard2_conf_y_path = _resolve_axis_model_path(hard2_model_dir, "y", ["conf_{axis}.keras", "best_{axis}.keras"])
+    hard2_conf_z_path = _resolve_axis_model_path(hard2_model_dir, "z", ["conf_{axis}.keras", "best_{axis}.keras"])
     
     model_paths = [
         light_model_path,
@@ -436,10 +463,14 @@ def main():
     print(f"Hard1 Metrics: {hard1_info['selection_info']['selected']['metrics']}")
     hard1_model_dir = hard1_info['checkpoints_dir']
     
-    hard2_info = get_best_hard_model_info(hard2_base_dir)
+    hard2_info = get_best_hard_model_info(
+        hard2_base_dir,
+        required_first_stage_run=hard1_info['actual_run_name'],
+    )
     print(f"Hard2 Selected Run: {hard2_info['selected_run']}")
     if hard2_info['selected_run'] != hard2_info['actual_run_name']:
         print(f"Hard2 Actual Directory: {hard2_info['actual_run_name']}")
+    print(f"Hard2 Selection Base: {hard2_info['selection_base_dir']}")
     print(f"Hard2 Metrics: {hard2_info['selection_info']['selected']['metrics']}")
     hard2_model_dir = hard2_info['checkpoints_dir']
     
@@ -463,6 +494,7 @@ def main():
     dataset_dict['metadata']['light_model_info'] = light_info['selection_info']
     dataset_dict['metadata']['hard1_model_info'] = hard1_info['selection_info']
     dataset_dict['metadata']['hard2_model_info'] = hard2_info['selection_info']
+    dataset_dict['metadata']['hard2_selection_base_dir'] = str(hard2_info['selection_base_dir'])
     
     output_dir = CURRENT_DIR / args.output_dir
     save_dataset(dataset_dict, output_dir, args.run_name)

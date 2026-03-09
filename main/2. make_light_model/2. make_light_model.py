@@ -1404,6 +1404,18 @@ print("[정보][평가 6/7] 베스트 모델 갱신")
 models_base = Path(current_dir) / "2. light_models"
 best_alias_dir = Path(current_dir) / "best_light_model"
 best_candidate = _collect_best_candidate_from_reports(models_base, RUNTIME_BEST_TARGET_RECALL, RUNTIME_BEST_TARGET_ACCURACY)
+
+# 현재 학습한 모델 정보 (후보 모델로 표시용)
+current_trained_model = {
+    "model_run": run_name,
+    "metrics": {
+        "accuracy": float(acc),
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1)
+    }
+}
+
 criteria = {
     "target_recall": RUNTIME_BEST_TARGET_RECALL,
     "target_accuracy": RUNTIME_BEST_TARGET_ACCURACY,
@@ -1539,9 +1551,9 @@ else:
         print(f"🏆 현재 베스트 모델: {current_best.get('model_run', 'N/A')}")
         print(f"   - Recall: {current_best['metrics'].get('recall', 0):.4f}")
         print(f"   - Accuracy: {current_best['metrics'].get('accuracy', 0):.4f}")
-        print(f"\n🔍 후보 모델: {best_candidate['model_run']}")
-        print(f"   - Recall: {best_candidate['metrics']['recall']:.4f}")
-        print(f"   - Accuracy: {best_candidate['metrics']['accuracy']:.4f}")
+        print(f"\n🔍 후보 모델 (방금 학습): {current_trained_model['model_run']}")
+        print(f"   - Recall: {current_trained_model['metrics']['recall']:.4f}")
+        print(f"   - Accuracy: {current_trained_model['metrics']['accuracy']:.4f}")
         print(f"\n❌ 결과: 후보 모델이 현재 베스트 모델을 넘지 못했습니다.")
         print(f"📝 히스토리: {history_path}")
         print("=" * 80 + "\n")

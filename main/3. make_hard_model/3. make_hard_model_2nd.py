@@ -702,6 +702,7 @@ def _extract_candidate_from_hard2_feedback(feedback_path: Path):
 
 
 def _collect_best_hard2_candidate(models_base: Path, target_f1: float, target_auc: float, target_sep: float):
+    """모든 2차 모델 중 베스트 후보를 찾습니다 (1차 모델 무관)."""
     feedback_paths = list(models_base.glob("*/evaluate/training_feedback.json"))
     if not feedback_paths:
         return None
@@ -713,6 +714,171 @@ def _collect_best_hard2_candidate(models_base: Path, target_f1: float, target_au
         if best is None or _rank_key_hard2(cand["metrics"], target_f1, target_auc, target_sep) > _rank_key_hard2(best["metrics"], target_f1, target_auc, target_sep):
             best = cand
     return best
+
+
+def _collect_best_hard2_candidate_for_first_stage(models_base: Path, first_stage_run: str, target_f1: float, target_auc: float, target_sep: float):
+    """특정 1차 모델을 사용한 2차 모델 중 베스트 후보를 찾습니다."""
+    feedback_paths = list(models_base.glob("*/evaluate/training_feedback.json"))
+    if not feedback_paths:
+        return None
+    best = None
+    for fp in feedback_paths:
+        # training_config.json에서 1차 모델 확인
+        config_path = fp.parent.parent / "training_config.json"
+        if not config_path.exists():
+            continue
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            if config.get("first_stage_run") != first_stage_run:
+                continue  # 다른 1차 모델 사용
+        except Exception:
+            continue
+        
+        cand = _extract_candidate_from_hard2_feedback(fp)
+        if cand is None:
+            continue
+        if best is None or _rank_key_hard2(cand["metrics"], target_f1, target_auc, target_sep) > _rank_key_hard2(best["metrics"], target_f1, target_auc, target_sep):
+            best = cand
+    return best
+
+
+def _update_overall_best_hard2_model(best_alias_dir: Path, target_f1: float, target_auc: float, target_sep: float):
+    """모든 1차 모델별 베스트 중에서 전체 베스트를 선정합니다."""
+    by_first_stage_dir = best_alias_dir / "by_first_stage"
+    overall_best_dir = best_alias_dir / "overall_best"
+    overall_best_dir.mkdir(parents=True, exist_ok=True)
+    
+    if not by_first_stage_dir.exists():
+        return
+    
+    # 모든 1차 모델별 베스트 수집
+    all_bests = []
+    for first_stage_subdir in by_first_stage_dir.iterdir():
+        if not first_stage_subdir.is_dir():
+            continue
+        best_info = _load_current_best_hard2_metrics(first_stage_subdir)
+        if best_info:
+            best_info["first_stage_run"] = first_stage_subdir.name
+            all_bests.append(best_info)
+    
+    if not all_bests:
+        return
+    
+    # 전체 베스트 선정
+    overall_best = max(all_bests, key=lambda x: _rank_key_hard2(x["metrics"], target_f1, target_auc, target_sep))
+    
+    # 전체 베스트 저장
+    selection_payload = {
+        "updated_at": datetime.datetime.now().isoformat(),
+        "selected": {
+            "model_run": overall_best["model_run"],
+            "first_stage_run": overall_best["first_stage_run"],
+            "metrics": overall_best["metrics"],
+        },
+        "note": "전체 1차 모델 중 최고 성능의 2차 모델"
+    }
+    with open(overall_best_dir / "best_model_selection.json", "w", encoding="utf-8") as f:
+        json.dump(selection_payload, f, ensure_ascii=False, indent=2)
+    
+    print(f"\n🌟 전체 베스트 2차 모델 업데이트:")
+    print(f"   1차 모델: {overall_best['first_stage_run']}")
+    print(f"   2차 모델: {overall_best['model_run']}")
+    print(f"   F1: {overall_best['metrics']['overall_best_f1']:.4f}, "
+          f"AUC: {overall_best['metrics']['overall_auc_high_iou']:.4f}, "
+          f"Sep: {overall_best['metrics']['overall_separation']:.4f}\n")
+
+
+def _migrate_old_best_structure_if_needed(best_alias_dir: Path, models_base: Path):
+    """기존 단일 베스트 구조를 1차 모델별 베스트 구조로 마이그레이션합니다."""
+    by_first_stage_dir = best_alias_dir / "by_first_stage"
+    migration_marker = best_alias_dir / ".migrated_to_by_first_stage"
+    
+    # 이미 마이그레이션 완료
+    if migration_marker.exists():
+        return
+    
+    # 기존 best_model_selection.json 확인
+    old_selection_file = best_alias_dir / "best_model_selection.json"
+    if not old_selection_file.exists():
+        # 기존 베스트 없음, 마이그레이션 불필요
+        migration_marker.touch()
+        return
+    
+    print("\n" + "=" * 80)
+    print("🔄 베스트 모델 구조 마이그레이션 시작")
+    print("=" * 80)
+    
+    try:
+        with open(old_selection_file, 'r', encoding='utf-8') as f:
+            old_selection = json.load(f)
+        
+        old_model_run = old_selection.get("selected", {}).get("model_run")
+        if not old_model_run:
+            print("⚠️  기존 베스트 모델 정보가 없습니다.")
+            migration_marker.touch()
+            return
+        
+        # 기존 모델의 1차 모델 찾기
+        old_model_dirs = list(best_alias_dir.glob(f"{old_model_run}"))
+        if not old_model_dirs:
+            # hard_models_2nd에서 찾기
+            old_model_dirs = list(models_base.glob(f"{old_model_run}"))
+        
+        if not old_model_dirs:
+            print(f"⚠️  기존 모델 디렉터리를 찾을 수 없습니다: {old_model_run}")
+            migration_marker.touch()
+            return
+        
+        old_model_dir = old_model_dirs[0]
+        config_path = old_model_dir / "training_config.json"
+        
+        first_stage_run = "unknown"
+        if config_path.exists():
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                first_stage_run = config.get("first_stage_run", "unknown")
+            except Exception:
+                pass
+        
+        print(f"기존 베스트 모델: {old_model_run}")
+        print(f"1차 모델: {first_stage_run}")
+        
+        # 새 구조로 복사
+        new_location = by_first_stage_dir / first_stage_run
+        new_location.mkdir(parents=True, exist_ok=True)
+        
+        # 모델 디렉터리 복사
+        if old_model_dir.parent == best_alias_dir:
+            # best_alias_dir 안에 있는 경우
+            dst_model_dir = new_location / old_model_run
+            if not dst_model_dir.exists():
+                shutil.copytree(old_model_dir, dst_model_dir)
+        
+        # best_model_selection.json 복사 및 수정
+        new_selection = old_selection.copy()
+        if "selected" in new_selection:
+            new_selection["selected"]["first_stage_run"] = first_stage_run
+        new_selection["migrated_from"] = "old_single_best_structure"
+        new_selection["migration_date"] = datetime.datetime.now().isoformat()
+        
+        with open(new_location / "best_model_selection.json", "w", encoding="utf-8") as f:
+            json.dump(new_selection, f, ensure_ascii=False, indent=2)
+        
+        # 기존 파일 백업
+        backup_dir = best_alias_dir / "_old_structure_backup"
+        backup_dir.mkdir(exist_ok=True)
+        if old_selection_file.exists():
+            shutil.copy2(old_selection_file, backup_dir / "best_model_selection.json")
+        
+        print(f"✅ 마이그레이션 완료: {new_location}")
+        print("=" * 80 + "\n")
+        
+    except Exception as e:
+        print(f"⚠️  마이그레이션 중 오류 발생: {e}")
+    finally:
+        migration_marker.touch()
 
 
 def _load_current_best_hard2_metrics(best_alias_dir: Path):
@@ -817,14 +983,43 @@ def _write_best_model_change_details(
     return details_path
 
 
-def _update_best_hard2_model(models_base: Path, best_alias_dir: Path, target_f1: float, target_auc: float, target_sep: float):
-    candidate = _collect_best_hard2_candidate(models_base, target_f1, target_auc, target_sep)
+def _update_best_hard2_model(models_base: Path, best_alias_dir: Path, target_f1: float, target_auc: float, target_sep: float, current_trained_model: dict = None, first_stage_run: str = None):
+    """1차 모델별로 베스트 2차 모델을 관리합니다.
+    
+    구조:
+    best_hard_model_2nd/
+      ├── by_first_stage/
+      │   ├── 20260309_2125/  # 각 1차 모델별 최고 2차 모델
+      │   │   ├── 20260309_2348/
+      │   │   ├── best_model_selection.json
+      │   │   └── best_model_change_details.log
+      │   └── 20260212_xxxx/
+      └── overall_best/  # 전체 최고 (심볼릭 링크 또는 복사)
+          └── best_model_selection.json
+    """
+    if not first_stage_run:
+        print("⚠️  경고: 1차 모델 정보가 없어 베스트 모델 업데이트를 건너뜁니다.")
+        return
+    
+    # 1차 모델별 베스트 디렉터리
+    by_first_stage_dir = best_alias_dir / "by_first_stage" / first_stage_run
+    by_first_stage_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 전체 베스트 디렉터리
+    overall_best_dir = best_alias_dir / "overall_best"
+    overall_best_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 현재 1차 모델에 대한 2차 모델 후보 수집 (같은 1차 모델만)
+    candidate = _collect_best_hard2_candidate_for_first_stage(models_base, first_stage_run, target_f1, target_auc, target_sep)
+    
     history_path = models_base / "best_model_selection_history.jsonl"
     criteria = {
         "target_overall_best_f1": float(target_f1),
         "target_overall_auc": float(target_auc),
         "target_overall_separation": float(target_sep),
+        "first_stage_run": first_stage_run,
     }
+    
     if candidate is None:
         history_path = _append_best_hard2_history(
             models_base,
@@ -834,20 +1029,12 @@ def _update_best_hard2_model(models_base: Path, best_alias_dir: Path, target_f1:
                 "criteria": criteria,
             },
         )
-        _write_best_model_change_details(
-            best_alias_dir=best_alias_dir,
-            model_alias="best_hard_model_2nd",
-            action="skip_no_candidate",
-            criteria=criteria,
-            selected={},
-            previous=_load_current_best_hard2_metrics(best_alias_dir),
-            history_path=history_path,
-            reason="평가 후보 없음",
-        )
-        print(f"best_hard_model_2nd 갱신 건너뜀: 후보가 없습니다. history={history_path}")
+        print(f"1차 모델 {first_stage_run}에 대한 2차 모델 후보가 없습니다.")
         return
 
-    current_best = _load_current_best_hard2_metrics(best_alias_dir)
+    # 현재 1차 모델에 대한 베스트 로드
+    current_best = _load_current_best_hard2_metrics(by_first_stage_dir)
+    
     should_replace = (
         current_best is None
         or _rank_key_hard2(candidate["metrics"], target_f1, target_auc, target_sep)
@@ -856,33 +1043,13 @@ def _update_best_hard2_model(models_base: Path, best_alias_dir: Path, target_f1:
 
     src_run_dir = models_base / candidate["model_run"]
     if not src_run_dir.exists():
-        history_path = _append_best_hard2_history(
-            models_base,
-            {
-                "timestamp": datetime.datetime.now().isoformat(),
-                "action": "candidate_run_missing",
-                "criteria": criteria,
-                "candidate": candidate,
-                "previous": current_best,
-            },
-        )
-        _write_best_model_change_details(
-            best_alias_dir=best_alias_dir,
-            model_alias="best_hard_model_2nd",
-            action="skip_missing_selected_run_dir",
-            criteria=criteria,
-            selected=candidate,
-            previous=current_best,
-            history_path=history_path,
-            reason="선정 run 디렉터리가 없음",
-        )
-        print(f"best_hard_model_2nd 갱신 건너뜀: 선정 run 경로가 없습니다. history={history_path}")
+        print(f"⚠️  선정 run 경로가 없습니다: {src_run_dir}")
         return
 
     if should_replace:
-        _clear_best_alias_dir(best_alias_dir, preserve_files={"best_model_change_details.log"})
-
-        dst_run_dir = best_alias_dir / src_run_dir.name
+        # 1차 모델별 베스트 업데이트
+        _clear_best_alias_dir(by_first_stage_dir, preserve_files={"best_model_change_details.log"})
+        dst_run_dir = by_first_stage_dir / src_run_dir.name
         shutil.copytree(src_run_dir, dst_run_dir)
 
         selection_payload = {
@@ -890,29 +1057,31 @@ def _update_best_hard2_model(models_base: Path, best_alias_dir: Path, target_f1:
             "criteria": criteria,
             "selected": {
                 "model_run": candidate["model_run"],
+                "first_stage_run": first_stage_run,
                 "metrics": candidate["metrics"],
                 "feedback_path": candidate["feedback_path"],
             },
             "previous": current_best,
         }
-        with open(best_alias_dir / "best_model_selection.json", "w", encoding="utf-8") as f:
+        with open(by_first_stage_dir / "best_model_selection.json", "w", encoding="utf-8") as f:
             json.dump(selection_payload, f, ensure_ascii=False, indent=2)
 
         history_path = _append_best_hard2_history(
             models_base, {"timestamp": datetime.datetime.now().isoformat(), "action": "replace_best_model", **selection_payload}
         )
         _write_best_model_change_details(
-            best_alias_dir=best_alias_dir,
-            model_alias="best_hard_model_2nd",
+            best_alias_dir=by_first_stage_dir,
+            model_alias=f"best_hard_model_2nd (1st: {first_stage_run})",
             action="replace_best_model",
             criteria=criteria,
             selected=selection_payload["selected"],
             previous=current_best,
             history_path=history_path,
-            reason="후보 모델이 현재 베스트보다 우수",
+            reason=f"1차 모델 {first_stage_run}에 대한 베스트 2차 모델 교체",
         )
+        
         print("\n" + "=" * 80)
-        print("🎉 베스트 모델 교체 성공!")
+        print(f"🎉 베스트 2차 모델 교체 성공! (1차 모델: {first_stage_run})")
         print("=" * 80)
         print(f"✅ 새로운 베스트 모델: {candidate['model_run']}")
         print(f"   - F1 Score: {candidate['metrics']['overall_best_f1']:.4f}")
@@ -926,6 +1095,9 @@ def _update_best_hard2_model(models_base: Path, best_alias_dir: Path, target_f1:
         print(f"\n💾 저장 위치: {dst_run_dir}")
         print(f"📝 히스토리: {history_path}")
         print("=" * 80 + "\n")
+        
+        # 전체 베스트 업데이트 (모든 1차 모델 중 최고)
+        _update_overall_best_hard2_model(best_alias_dir, target_f1, target_auc, target_sep)
     else:
         history_path = _append_best_hard2_history(
             models_base,
@@ -938,26 +1110,29 @@ def _update_best_hard2_model(models_base: Path, best_alias_dir: Path, target_f1:
             },
         )
         _write_best_model_change_details(
-            best_alias_dir=best_alias_dir,
-            model_alias="best_hard_model_2nd",
+            best_alias_dir=by_first_stage_dir,
+            model_alias=f"best_hard_model_2nd (1st: {first_stage_run})",
             action="keep_current_best",
             criteria=criteria,
             selected=candidate,
             previous=current_best,
             history_path=history_path,
-            reason="현재 베스트 모델 유지",
+            reason=f"1차 모델 {first_stage_run}에 대한 현재 베스트 유지",
         )
         print("\n" + "=" * 80)
-        print("ℹ️  베스트 모델 유지")
+        print(f"ℹ️  베스트 2차 모델 유지 (1차 모델: {first_stage_run})")
         print("=" * 80)
         print(f"🏆 현재 베스트 모델: {current_best.get('model_run', 'N/A')}")
         print(f"   - F1 Score: {current_best['metrics'].get('overall_best_f1', 0):.4f}")
         print(f"   - AUC (High IoU): {current_best['metrics'].get('overall_auc_high_iou', 0):.4f}")
         print(f"   - Separation: {current_best['metrics'].get('overall_separation', 0):.4f}")
-        print(f"\n🔍 후보 모델: {candidate['model_run']}")
-        print(f"   - F1 Score: {candidate['metrics']['overall_best_f1']:.4f}")
-        print(f"   - AUC (High IoU): {candidate['metrics']['overall_auc_high_iou']:.4f}")
-        print(f"   - Separation: {candidate['metrics']['overall_separation']:.4f}")
+        
+        # 방금 학습한 모델 정보 표시
+        display_candidate = current_trained_model if current_trained_model else candidate
+        print(f"\n🔍 후보 모델 (방금 학습): {display_candidate['model_run']}")
+        print(f"   - F1 Score: {display_candidate['metrics']['overall_best_f1']:.4f}")
+        print(f"   - AUC (High IoU): {display_candidate['metrics']['overall_auc_high_iou']:.4f}")
+        print(f"   - Separation: {display_candidate['metrics']['overall_separation']:.4f}")
         print(f"\n❌ 결과: 후보 모델이 현재 베스트 모델을 넘지 못했습니다.")
         print(f"📝 히스토리: {history_path}")
         print("=" * 80 + "\n")
@@ -1035,6 +1210,9 @@ def main():
 
     print(f"1차 Hard run: {first_stage_run_dir}")
     print(f"학습 설정: batch={BATCH}, epochs={EPOCHS}, lr={CONF_LR}")
+    
+    # 기존 베스트 모델 구조 마이그레이션 (1회만 실행)
+    _migrate_old_best_structure_if_needed(BEST_ALIAS_DIR, RUN_BASE_DIR)
     print("TF:", tf.__version__)
     print("GPUs:", tf.config.list_physical_devices("GPU"))
 
@@ -1166,6 +1344,28 @@ def main():
     print(f"저장: {local_eval_dir / 'training_feedback.json'}")
     print(f"저장: {local_eval_dir / 'evaluation_metrics.json'}")
     print("[정보][평가 4/7] 베스트 모델 후보 비교 준비")
+    
+    # 현재 학습한 모델 정보 로드
+    eval_metrics_path = local_eval_dir / 'evaluation_metrics.json'
+    current_trained_model = None
+    if eval_metrics_path.exists():
+        try:
+            with open(eval_metrics_path, 'r', encoding='utf-8') as f:
+                eval_data = json.load(f)
+            
+            # overall 객체에서 메트릭 읽기
+            overall_data = eval_data.get("overall", {})
+            current_trained_model = {
+                "model_run": run_dir.name,
+                "metrics": {
+                    "overall_best_f1": float(overall_data.get("best_f1", 0)),
+                    "overall_auc_high_iou": float(overall_data.get("auc_high_iou", 0)),
+                    "overall_separation": float(overall_data.get("separation", 0)),
+                }
+            }
+        except Exception:
+            pass
+    
     print("[정보][평가 5/7] 베스트 모델 비교/선정")
     _update_best_hard2_model(
         models_base=RUN_BASE_DIR,
@@ -1173,6 +1373,8 @@ def main():
         target_f1=TARGET_F1,
         target_auc=TARGET_AUC,
         target_sep=TARGET_SEP,
+        current_trained_model=current_trained_model,
+        first_stage_run=first_stage_run_dir.name,
     )
     print("[정보][평가 6/7] 히스토리 기록 완료")
     print("[정보][평가 7/7] 상세 평가 완료")

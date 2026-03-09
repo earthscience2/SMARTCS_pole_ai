@@ -651,7 +651,8 @@ def eval_bbox_roi_bestpair(model, X, y, roi_idx: int, K: int, P: int, batch=32, 
         df.to_csv(save_dir / f"{prefix}roi{roi_idx}_bestpair_rows.csv", index=False, encoding="utf-8-sig")
     plt.close(fig)
 
-    return {"mean_best_iou": mean_best_iou, "rmse": rmse, "best_iou": best_iou, "pred_idx": pred_idx, "gt_idx": gt_idx, "has_gt": has_gt}
+    # ✅ 수정: GT가 있는 샘플의 best_iou만 반환 (음수 값 제거)
+    return {"mean_best_iou": mean_best_iou, "rmse": rmse, "best_iou": best_iou_valid, "pred_idx": pred_idx, "gt_idx": gt_idx, "has_gt": has_gt}
 
 
 def load_best_or_current(best_ckpt_path, fallback_model, P: int, K: int):
@@ -788,7 +789,16 @@ def _run_stage1_evaluation(
     for axis in ("x", "y", "z"):
         r = axis_results.get(axis, {})
         best_iou = np.asarray(r.get("best_iou", []), dtype=np.float32)
+        
+        # 디버그: best_iou 배열 상태 확인
+        print(f"[디버그][{axis}] best_iou 배열 크기: {best_iou.size}, "
+              f"min={best_iou.min() if best_iou.size > 0 else 'N/A'}, "
+              f"max={best_iou.max() if best_iou.size > 0 else 'N/A'}, "
+              f"mean={best_iou.mean() if best_iou.size > 0 else 'N/A'}")
+        
         valid = best_iou[np.isfinite(best_iou)]
+        print(f"[디버그][{axis}] 유효한 값: {valid.size}/{best_iou.size}")
+        
         mean_iou = float(valid.mean()) if valid.size else None
         ratio05 = float((valid >= 0.5).mean()) if valid.size else None
         ratio07 = float((valid >= 0.7).mean()) if valid.size else None
@@ -996,7 +1006,7 @@ def _write_best_model_change_details(
     return details_path
 
 
-def _update_best_hard1_model(models_base: Path, best_alias_dir: Path, target_mean_iou: float, target_iou05: float, target_iou07: float):
+def _update_best_hard1_model(models_base: Path, best_alias_dir: Path, target_mean_iou: float, target_iou05: float, target_iou07: float, current_trained_model: dict = None):
     candidate = _collect_best_hard1_candidate(models_base, target_mean_iou, target_iou05, target_iou07)
     criteria = {
         "target_mean_best_iou": float(target_mean_iou),
@@ -1128,10 +1138,13 @@ def _update_best_hard1_model(models_base: Path, best_alias_dir: Path, target_mea
         print(f"   - Avg Mean IoU: {current_best['metrics'].get('avg_mean_best_iou', 0):.4f}")
         print(f"   - IoU ≥ 0.5: {current_best['metrics'].get('avg_ratio_iou_0_5', 0):.4f}")
         print(f"   - IoU ≥ 0.7: {current_best['metrics'].get('avg_ratio_iou_0_7', 0):.4f}")
-        print(f"\n🔍 후보 모델: {candidate['model_run']}")
-        print(f"   - Avg Mean IoU: {candidate['metrics']['avg_mean_best_iou']:.4f}")
-        print(f"   - IoU ≥ 0.5: {candidate['metrics']['avg_ratio_iou_0_5']:.4f}")
-        print(f"   - IoU ≥ 0.7: {candidate['metrics']['avg_ratio_iou_0_7']:.4f}")
+        
+        # 방금 학습한 모델 정보 표시
+        display_candidate = current_trained_model if current_trained_model else candidate
+        print(f"\n🔍 후보 모델 (방금 학습): {display_candidate['model_run']}")
+        print(f"   - Avg Mean IoU: {display_candidate['metrics']['avg_mean_best_iou']:.4f}")
+        print(f"   - IoU ≥ 0.5: {display_candidate['metrics']['avg_ratio_iou_0_5']:.4f}")
+        print(f"   - IoU ≥ 0.7: {display_candidate['metrics']['avg_ratio_iou_0_7']:.4f}")
         print(f"\n❌ 결과: 후보 모델이 현재 베스트 모델을 넘지 못했습니다.")
         print(f"📝 히스토리: {history_path}")
         print("=" * 80 + "\n")
@@ -1153,6 +1166,7 @@ def main():
     parser.add_argument("--dropout", type=float, default=USER_OPTIONS["core"]["dropout"], help="dropout")
     parser.add_argument("--pred-boxes-per-axis", type=int, default=USER_OPTIONS["core"]["pred_boxes_per_axis"], help="축당 예측 박스 수 (P)")
     parser.add_argument("--run-tag", type=str, default="", help="run 이름 suffix")
+    parser.add_argument("--pretrained", action="store_true", help="베스트 모델에서 전이 학습 시작")
     args = parser.parse_args()
     # Data path: prefer latest run under 1. hard_train_data, fallback to 5. train_data
     hard_data_base = Path(current_dir) / "1. hard_train_data"
@@ -1307,20 +1321,70 @@ def main():
         dropout=float(args.dropout),
     )
 
+    # 전이 학습: 베스트 모델 로드
+    best_model_dir = Path(current_dir) / "best_hard_model_1st"
+    pretrained_models = {}
+    if args.pretrained:
+        print("\n" + "=" * 60)
+        print("🔄 전이 학습 모드: 베스트 모델에서 시작")
+        print("=" * 60)
+        for axis in ["x", "y", "z"]:
+            pretrained_path = best_model_dir / f"*" / "checkpoints" / f"best_{axis}.keras"
+            import glob
+            matches = glob.glob(str(pretrained_path))
+            if matches:
+                pretrained_models[axis] = Path(matches[0])
+                print(f"✅ {axis.upper()} 축 베스트 모델 발견: {pretrained_models[axis]}")
+            else:
+                print(f"⚠️  {axis.upper()} 축 베스트 모델 없음, 새로 시작합니다")
+        print("=" * 60 + "\n")
+
     histories = {}
     for axis, roi_idx in [("x", 0), ("y", 1), ("z", 2)]:
         seed = BASE_SEED + roi_idx
         tf.keras.utils.set_random_seed(seed)
         ds_train = make_ds_roi(X_train, y_train, roi_idx=roi_idx, K=K, training=True, seed=seed)
         ds_val = make_ds_roi(X_val, y_val, roi_idx=roi_idx, K=K, training=False, seed=seed)
-        model = build_and_compile_model(
-            axis,
-            X_train.shape[1:],
-            P=P,
-            K=K,
-            dropout=float(args.dropout),
-            learning_rate=float(args.learning_rate),
-        )
+        
+        # 전이 학습: 기존 모델 로드 또는 새로 생성
+        if args.pretrained and axis in pretrained_models:
+            print(f"\n[{axis.upper()}] 베스트 모델에서 가중치 로드: {pretrained_models[axis]}")
+            try:
+                model = keras.models.load_model(str(pretrained_models[axis]), compile=False)
+                # 새로운 학습률로 재컴파일
+                model.compile(
+                    optimizer=keras.optimizers.Adam(float(args.learning_rate)),
+                    loss=huber_bestpair_loss(
+                        P=P,
+                        K=K,
+                        delta=0.05,
+                        conf_weight=CONF_WEIGHT,
+                        iou_threshold_for_conf=IOU_THRESHOLD_FOR_CONF,
+                    ),
+                    metrics=[bbox_iou_metric_maxPK(P=P, K=K)],
+                    jit_compile=False,
+                )
+                print(f"[{axis.upper()}] ✅ 전이 학습 준비 완료 (lr={float(args.learning_rate)})")
+            except Exception as e:
+                print(f"[{axis.upper()}] ⚠️  모델 로드 실패: {e}, 새로 시작합니다")
+                model = build_and_compile_model(
+                    axis,
+                    X_train.shape[1:],
+                    P=P,
+                    K=K,
+                    dropout=float(args.dropout),
+                    learning_rate=float(args.learning_rate),
+                )
+        else:
+            model = build_and_compile_model(
+                axis,
+                X_train.shape[1:],
+                P=P,
+                K=K,
+                dropout=float(args.dropout),
+                learning_rate=float(args.learning_rate),
+            )
+        
         callbacks = make_callbacks(axis)
         history = model.fit(ds_train, validation_data=ds_val, epochs=EPOCHS, callbacks=callbacks, verbose=1)
         histories[axis] = {k: [float(v) for v in vals] for k, vals in history.history.items()}
@@ -1366,6 +1430,44 @@ def main():
     print(f"저장: {local_eval_dir / 'training_feedback.json'}")
     print(f"저장: {local_eval_dir / 'evaluation_metrics.json'}")
     print("[정보][평가 4/7] 베스트 모델 후보 비교 준비")
+    
+    # 현재 학습한 모델 정보 로드
+    eval_metrics_path = local_eval_dir / 'evaluation_metrics.json'
+    current_trained_model = None
+    if eval_metrics_path.exists():
+        try:
+            with open(eval_metrics_path, 'r', encoding='utf-8') as f:
+                eval_data = json.load(f)
+            
+            # overall 객체에서 메트릭 추출 (새 형식)
+            if "overall" in eval_data:
+                overall = eval_data["overall"]
+                current_trained_model = {
+                    "model_run": run_dir.name,
+                    "metrics": {
+                        "avg_mean_best_iou": float(overall.get("avg_mean_best_iou", 0)),
+                        "avg_ratio_iou_0_5": float(overall.get("avg_ratio_iou_0_5", 0)),
+                        "avg_ratio_iou_0_7": float(overall.get("avg_ratio_iou_0_7", 0)),
+                    }
+                }
+            # 루트 레벨에서 메트릭 추출 (구 형식)
+            else:
+                current_trained_model = {
+                    "model_run": run_dir.name,
+                    "metrics": {
+                        "avg_mean_best_iou": float(eval_data.get("avg_mean_best_iou", 0)),
+                        "avg_ratio_iou_0_5": float(eval_data.get("avg_ratio_iou_0_5", 0)),
+                        "avg_ratio_iou_0_7": float(eval_data.get("avg_ratio_iou_0_7", 0)),
+                    }
+                }
+            
+            print(f"[디버그] 현재 모델 메트릭 로드: IoU={current_trained_model['metrics']['avg_mean_best_iou']:.4f}, "
+                  f"≥0.5={current_trained_model['metrics']['avg_ratio_iou_0_5']:.4f}, "
+                  f"≥0.7={current_trained_model['metrics']['avg_ratio_iou_0_7']:.4f}")
+        except Exception as e:
+            print(f"[경고] 현재 모델 메트릭 로드 실패: {e}")
+            pass
+    
     print("[정보][평가 5/7] 베스트 모델 비교/선정")
     _update_best_hard1_model(
         models_base=run_dir_base,
@@ -1373,6 +1475,7 @@ def main():
         target_mean_iou=TARGET_MEAN_IOU,
         target_iou05=TARGET_IOU_05,
         target_iou07=TARGET_IOU_07,
+        current_trained_model=current_trained_model,
     )
     print("[정보][평가 6/7] 히스토리 기록 완료")
     print("[정보][평가 7/7] 상세 평가 완료")
