@@ -99,6 +99,9 @@ main/4. make_mlp_model/1. mlp_train_data/
 main/4. make_mlp_model/2. mlp_models/
 main/4. make_mlp_model/best_model/
 main/best_model/
+main/models/*
+!main/models/*.py
+!main/models/*.md
 main/__pycache__/
 main/*/__pycache__/
 
